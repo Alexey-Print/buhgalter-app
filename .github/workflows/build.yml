@@ -24,26 +24,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses-dev libtinfo-dev cmake libffi-dev libssl-dev automake wget
+          sudo apt install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev cmake libffi-dev libssl-dev automake wget lld
           pip install --upgrade pip
-          pip install --upgrade buildozer cython==0.29.36
-
-      - name: Pre-install Android SDK tools
-        run: |
-          SDK=$HOME/.buildozer/android/platform/android-sdk
-          mkdir -p $SDK/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/tools.zip
-          unzip -q /tmp/tools.zip -d $SDK/cmdline-tools/
-          mv $SDK/cmdline-tools/cmdline-tools $SDK/cmdline-tools/latest
-          mkdir -p $SDK/tools/bin
-          ln -s $SDK/cmdline-tools/latest/bin/sdkmanager $SDK/tools/bin/sdkmanager
-          yes | $SDK/cmdline-tools/latest/bin/sdkmanager --licenses --sdk_root=$SDK
+          pip install buildozer==1.5.0 cython==0.29.36
 
       - name: Build with Buildozer
         run: yes | buildozer android debug
+        env:
+          ANDROID_HOME: ""
+          ANDROID_SDK_ROOT: ""
+          ANDROID_NDK_HOME: ""
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
