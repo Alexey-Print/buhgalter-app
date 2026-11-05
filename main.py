@@ -66,6 +66,9 @@ def format_num_simple(val):
     return money(val)
 
 
+APP_VERSION = "2.4"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+
+
 def rub(val):
     """Сумма для показа на экране — целые рубли (внутри всё хранится и считается до копейки)."""
     try:
@@ -817,6 +820,9 @@ class MainMenu(Screen):
         col.add_widget(self.card_clients)
         col.add_widget(self.card_profit)
         col.add_widget(exit_btn)
+        ver = Label(text=f"версия {APP_VERSION}", font_size='13sp', color=(0.45, 0.5, 0.58, 1),
+                    size_hint_y=None, height=40)
+        col.add_widget(ver)
         col.add_widget(Widget(size_hint_y=1))
 
         self.bg_layer.add_widget(col)
@@ -2735,6 +2741,9 @@ class ClientsScreen(Screen):
                 r.clear_widgets()
                 lbl = Label(text=text, markup=True, font_size='20sp', halign='left', valign='middle')
                 lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
+                # одна строка: цвет рулона не уезжает за край при длинных цифрах
+                self._fit_font(lbl, max_sp=20, min_sp=12,
+                               fallback=f"[b][color=#FFFFFF]{disp}[/color][/b]  [b][color=#5FD39B]{rem} м[/color][/b] [color=#7A8494]/ {tot}[/color]")
                 r.add_widget(lbl)
                 r.bind(on_release=lambda x, i=ri: self._roll_edit_popup(i, pop))
                 grid.add_widget(r)

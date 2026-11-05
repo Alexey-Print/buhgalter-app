@@ -130,3 +130,25 @@ class RollKeyboardTests(WindowTests):
         save = next(w for w in pop.walk() if isinstance(w, Button) and w.text == 'СОХРАНИТЬ')
         bottom_of_save = save.to_window(save.x, save.y)[1]
         self.assertGreater(bottom_of_save, Window.height * 0.45, bottom_of_save)
+
+
+class VersionAndRollListTests(WindowTests):
+    def test_version_matches_build_settings(self):
+        spec = Path(__file__).resolve().parents[1].joinpath('buildozer.spec').read_text(encoding='utf-8')
+        self.assertIn(f'version = {main.APP_VERSION}\n', spec)
+        menu = main.MainMenu(name='m')
+        self.assertTrue(any(f'версия {main.APP_VERSION}' == getattr(w, 'text', '') for w in menu.walk()))
+
+    def test_roll_colour_visible_in_list(self):
+        self.app.rolls[:] = [{'color': 'black', 'width': '3.2', 'total': '75', 'remain': '68'},
+                             {'color': 'white', 'width': '1.6', 'total': '1250.5', 'remain': '1033.25'}]
+        self.screen.show_rolls_inventory()
+        pop = self.popup('ОСТАТКИ МАТЕРИАЛА')
+        rows = [w for w in pop.walk() if isinstance(w, main.QuickDebtRow)]
+        for row, colour in zip(rows, ('ЧЁРНЫЙ', 'БЕЛЫЙ')):
+            lbl = next(w for w in row.walk() if isinstance(w, main.Label) and 'м' in w.text)
+            for width in (700, 300):
+                lbl.width = width
+                Clock.tick()
+                self.assertIn(colour, lbl.text)
+                self.assertEqual(lbl.max_lines, 1)
