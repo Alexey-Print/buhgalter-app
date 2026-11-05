@@ -1,9 +1,9 @@
 name: Build APK
 
-# Сборка только по метке uchet-v* (или вручную). Обычные commits ничего не собирают.
+# Сборка только по commit со словами [build apk] в описании (или вручную). Остальные commits ничего не собирают.
 on:
   push:
-    tags: ['uchet-v*']
+    branches: [claude-fixes-2026-11-05]
   workflow_dispatch:
 
 permissions:
@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   checks:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build apk]')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -118,10 +119,11 @@ jobs:
           path: bin/*
 
       - name: Publish download page (GitHub Release)
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" bin/*-release.apk bin/SHA256SUMS.txt bin/CERTIFICATE.txt \
-            --repo "$GITHUB_REPOSITORY" --prerelease --title "Учёт $GITHUB_REF_NAME" \
+          VER=$(sed -n 's/^version = //p' buildozer.spec)
+          TAG="uchet-v$VER-$(git rev-parse --short HEAD)"
+          gh release create "$TAG" bin/*-release.apk bin/SHA256SUMS.txt bin/CERTIFICATE.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Учёт $VER ($TAG)" \
             --notes "Новое приложение «Учёт» (com.aleksey.uchet2). Ставится рядом со старым «Uchet», старое не удалять."
