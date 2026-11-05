@@ -32,7 +32,7 @@ jobs:
           docker run --rm \
             --entrypoint bash \
             -v "$PWD":/home/user/hostcwd \
-            kivy/buildozer:latest \
+            kivy/buildozer@sha256:92860ae3822fd533b90ab11f7c2272859980d34b791b1454a09a90e9849a5c7a \
             -c "cd /home/user/hostcwd && yes | buildozer android debug" > build-android.log 2>&1
           build_status=$?
           tail -n 160 build-android.log
