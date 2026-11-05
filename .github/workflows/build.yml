@@ -133,7 +133,21 @@ jobs:
           name: uchet-apk
           path: bin/*
 
+      - name: Publish APK to permanent download link (branch apk-downloads)
+        run: |
+          set -euo pipefail
+          VER=$(sed -n 's/^version = //p' buildozer.spec)
+          OUT="$RUNNER_TEMP/apk-downloads"; rm -rf "$OUT"; mkdir -p "$OUT"
+          cp bin/*-release.apk "$OUT/uchet-latest.apk"
+          cp bin/SHA256SUMS.txt bin/CERTIFICATE.txt "$OUT/"
+          echo "Учёт $VER, commit $(git rev-parse --short HEAD)" > "$OUT/VERSION.txt"
+          cd "$OUT"; git init -q; git checkout -q -b apk-downloads
+          git add .; git -c user.name="github-actions" -c user.email="actions@github.com" commit -qm "Учёт $VER"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/$GITHUB_REPOSITORY.git" apk-downloads
+          echo "Ссылка: https://github.com/$GITHUB_REPOSITORY/raw/apk-downloads/uchet-latest.apk"
+
       - name: Publish download page (GitHub Release)
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
