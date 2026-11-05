@@ -3919,7 +3919,10 @@ class BusinessApp(App):
         self.active_popups = 0
 
     def build(self):
-        self.load_data()
+        try:
+            self.load_data()
+        except Exception as exc:
+            return self._load_error_screen(exc)
         sm = ScreenManager()
         sm.add_widget(MainMenu(name='main_menu'))
         sm.add_widget(ClientsScreen(name='clients_screen'))
@@ -3985,6 +3988,23 @@ class BusinessApp(App):
             elif found:
                 self.role_warning.extend(c.get('name', '') for c in found)
         extra['roles_version'] = 1
+
+    def _load_error_screen(self, exc):
+        """База не прочиталась: ничего не записываем и понятно объясняем, вместо закрытия."""
+        self.load_failed = True
+        box = BoxLayout(orientation='vertical', padding=30, spacing=20)
+        msg = Label(text=('[b]НЕ УДАЛОСЬ ОТКРЫТЬ ДАННЫЕ[/b]\n\n'
+                          'Ваши файлы не удалены и не изменены.\n'
+                          'Программа ничего не записывала.\n\n'
+                          'Сообщите разработчику и пришлите этот экран.\n\n'
+                          f'[size=13sp]{exc}\n{DATA_FILE}[/size]'),
+                    markup=True, halign='center', valign='middle', font_size='18sp')
+        msg.bind(size=lambda s, v: setattr(s, 'text_size', v))
+        btn = RoundedButton(text='ЗАКРЫТЬ', bg_color=(0.6, 0.2, 0.2, 1), size_hint_y=None, height=100, bold=True)
+        btn.bind(on_release=lambda x: self.stop())
+        box.add_widget(msg)
+        box.add_widget(btn)
+        return box
 
     def get_special_clients(self):
         m_indices = [i for i, c in enumerate(self.clients) if c.get('is_creditor')]
@@ -4103,10 +4123,15 @@ class BusinessApp(App):
             except Exception:
                 loaded = False
         if not loaded and os.path.exists(DATA_FILE):
+            # Каждое повреждённое содержимое — в свой файл; старые копии не перезаписываются.
+            # Если копию сделать не удалось — исключение: исходный файл не будет заменён.
             import shutil
-            damaged = DATA_FILE + '.damaged'
-            if not os.path.exists(damaged):
-                shutil.copy2(DATA_FILE, damaged)
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            damaged = f"{DATA_FILE}.damaged_{stamp}_{uuid.uuid4().hex[:6]}"
+            shutil.copy2(DATA_FILE, damaged)
+            with open(DATA_FILE, 'rb') as a, open(damaged, 'rb') as b:
+                if a.read() != b.read():
+                    raise OSError('Копия повреждённой базы не совпала с оригиналом')
         if not loaded:
             # основной файл отсутствует или повреждён — пробуем свежую резервную копию,
             # и только если её нет — грузим пустую заготовку
@@ -4209,6 +4234,8 @@ class BusinessApp(App):
 
     def save_data(self):
         """Записать базу. Каждое изменение долга и прибыли попадает в журнал (было → стало)."""
+        if getattr(self, 'load_failed', False):
+            raise OSError('База не открыта — запись запрещена')
         ensure_ids(self.clients)
         if getattr(self, 'journal', None) is None:
             self.journal = []

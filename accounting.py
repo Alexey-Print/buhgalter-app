@@ -105,6 +105,11 @@ def atomic_write(path, data):
     return text
 
 
+LEGACY_HINT = ('Данные не изменены. При необходимости поправьте долг вручную в окне долга (это исправит только сумму, сам заказ останется в истории)')
+LEGACY_HINT_CREDITOR = ('Данные не изменены. При необходимости поправьте вручную долг клиента и долг исполнителя '
+                        '(это исправит только суммы, сам заказ останется в истории)')
+
+
 def reverse_order(app, client, item):
     """Validate all links before changing anything. Return (success, Russian message)."""
     if not any(c is client for c in app.clients):
@@ -126,12 +131,12 @@ def reverse_order(app, client, item):
                       (c.get('cid') == item['creditor_id'] if item.get('creditor_id')
                        else c.get('name') == item.get('creditor_name'))]
         if len(candidates) != 1 or not oid:
-            return False, 'Не удалось однозначно найти исполнителя старого заказа'
+            return False, 'Автоматическая отмена недоступна: у старого заказа не найден исполнитель. ' + LEGACY_HINT
         creditor = candidates[0]
         matches = [(hist, h) for hist in (creditor.get('history', []), creditor.get('archived_history', []))
                    for h in hist if h.get('source_oid') == oid]
         if len(matches) != 1 or abs(number(matches[0][1].get('sum')) - cost) > .001:
-            return False, 'У старого заказа нет точной связи с исполнителем. Долги не изменены'
+            return False, 'Автоматическая отмена недоступна: старый заказ не связан точно с записью исполнителя. ' + LEGACY_HINT_CREDITOR
         linked = creditor, matches[0][0], matches[0][1]
     elif client.get('is_creditor') and not oid:
         return False, 'Старая запись исполнителя: удалите исходный заказ клиента'
@@ -160,7 +165,7 @@ def reverse_order(app, client, item):
     if not oid:
         possible = [p for p in app.profit_log if p.get('name') == client.get('name') and p.get('date') == item.get('date')]
         if possible:
-            return False, 'У старого заказа нет точной связи с прибылью. Данные не изменены'
+            return False, 'Автоматическая отмена недоступна: старый заказ не связан точно с историей прибыли. ' + LEGACY_HINT
     state = snapshot(app)
     try:
         history.pop(next(i for i, h in enumerate(history) if h is item))
