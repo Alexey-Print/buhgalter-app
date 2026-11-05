@@ -4,7 +4,7 @@ import re
 import time
 import math
 import uuid
-from accounting import JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
+from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
 from datetime import datetime
 from collections import defaultdict
 
@@ -4193,10 +4193,14 @@ class BusinessApp(App):
         ensure_ids(self.clients)
         if getattr(self, 'journal', None) is None:
             self.journal = []
-        balances = journal_balances(self)
-        entries = journal_entries(getattr(self, '_journal_base', None), balances,
+        before_net = journal_balances(self)
+        entries = journal_entries(getattr(self, '_journal_base', None), before_net,
                                   getattr(self, '_op', '') or 'изменение')
         self._op = ''
+        net_partners(self)
+        balances = journal_balances(self)
+        if getattr(self, '_journal_base', None) is not None:
+            entries += journal_entries(before_net, balances, 'взаимозачёт')
         self.journal.extend(entries)
         try:
             text = atomic_write(DATA_FILE, self._current_data())

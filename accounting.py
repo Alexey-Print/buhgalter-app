@@ -422,3 +422,49 @@ def check_integrity(app):
             problems.append(f'{current[key][0]}: сумма изменена мимо журнала '
                             f'(по журналу {value}, сейчас {current[key][1]})')
     return problems
+
+
+def _norm_name(name):
+    return ' '.join(str(name or '').lower().replace('ё', 'е').split())
+
+
+def link_partners(app):
+    """Связать обычного клиента и исполнителя с одинаковым именем (один и тот же человек).
+    Связь постоянная (по cid) и не зависит от последующего переименования."""
+    by_cid = {c.get('cid'): c for c in app.clients}
+    for client in app.clients:
+        if client.get('is_creditor') or not is_ordinary_client(app, client):
+            continue
+        partner = by_cid.get(client.get('partner_cid'))
+        if partner is not None and partner.get('is_creditor'):
+            continue
+        same = [c for c in app.clients if c.get('is_creditor') and c is not client
+                and _norm_name(c.get('name')) == _norm_name(client.get('name'))
+                and by_cid.get(c.get('partner_cid')) in (None, client)]
+        if len(same) == 1:
+            client['partner_cid'] = same[0].get('cid')
+            same[0]['partner_cid'] = client.get('cid')
+
+
+def net_partners(app):
+    """Автоматический взаимозачёт: долг человека мне и мой долг ему гасятся друг о друга.
+    Итог: остаётся только одна сторона. Прибыль не меняется (как при оплате)."""
+    link_partners(app)
+    by_cid = {c.get('cid'): c for c in app.clients}
+    changed = False
+    for client in app.clients:
+        creditor = by_cid.get(client.get('partner_cid'))
+        if client.get('is_creditor') or creditor is None or not creditor.get('is_creditor'):
+            continue
+        if creditor.get('partner_cid') != client.get('cid') or not is_ordinary_client(app, client):
+            continue
+        mine, theirs = _dec(client.get('debt')), _dec(creditor.get('debt'))
+        position = mine - theirs          # > 0 — он должен мне, < 0 — я должен ему
+        zero = Decimal('0')
+        new_mine, new_theirs = (position, zero) if position >= 0 else (zero, -position)
+        if new_mine != mine or new_theirs != theirs:
+            app.profit_correction = money(_dec(app.profit_correction) + (mine - new_mine))
+            client['debt'] = money(new_mine)
+            creditor['debt'] = money(new_theirs)
+            changed = True
+    return changed
