@@ -3348,26 +3348,45 @@ class ClientsScreen(Screen):
             btn.bg_color = [0.1, 0.8, 0.1, 1] if ok else [0.9, 0.15, 0.15, 1]
             Clock.schedule_once(lambda dt: (setattr(btn, 'text', old_t), setattr(btn, 'bg_color', old_c)), 1.2)
 
-        def on_undo_clicked(instance):
-            if not self.raw_history_lines:
-                return
-            last = self.raw_history_lines[-1]
-            matches = [(c, h) for c in app.clients for h in c.get('history', [])
-                       if last.get('oid') and h.get('oid') == last['oid']]
-            if len(matches) != 1:
-                flash_btn(instance, ok=False, msg="ЗАКАЗ НЕ НАЙДЕН")
-                return
-            ok, message = reverse_order(app, *matches[0])
-            if not ok:
-                self._stub_popup("ОТМЕНА ШАГА", message)
-                return
-            self.raw_history_lines.pop()
+        last_undo_ts = [0.0]
+
+        def drop_last_line():
+            last = self.raw_history_lines.pop()
             self.order_total_accumulator = round(self.order_total_accumulator - safe_float(last['sum']), 2)
             btn_total_order.text = f"СУММА ЗАКАЗА:\n{format_num_simple(self.order_total_accumulator)} руб"
             if history_layout.children:
                 history_layout.remove_widget(history_layout.children[0])
             if not self.raw_history_lines and empty_placeholder.parent is None:
                 history_layout.add_widget(empty_placeholder)
+
+        def on_undo_clicked(instance):
+            if not self.raw_history_lines:
+                return
+            now_ts = time.time()
+            if now_ts - last_undo_ts[0] < 0.8:   # случайное двойное нажатие — один шаг
+                return
+            last_undo_ts[0] = now_ts
+            last = self.raw_history_lines[-1]
+            oid = last.get('oid')
+            matches = [(c, h) for c in app.clients for h in c.get('history', [])
+                       if oid and h.get('oid') == oid]
+            archived = [1 for c in app.clients for h in c.get('archived_history', [])
+                        if oid and h.get('oid') == oid]
+            if len(matches) > 1 or (matches and archived):
+                self._stub_popup("ОТМЕНА ШАГА", 'Заказ записан несколько раз: требуется проверка. Данные не изменены')
+                return
+            if not matches:
+                if archived:
+                    self._stub_popup("ОТМЕНА ШАГА", 'Заказ уже в архиве (история очищена). Отменить его нельзя')
+                    return
+                drop_last_line()
+                self._stub_popup("ОТМЕНА ШАГА", 'Заказ уже удалён. Строка убрана, долги не менялись')
+                return
+            ok, message = reverse_order(app, *matches[0])
+            if not ok:
+                self._stub_popup("ОТМЕНА ШАГА", message)
+                return
+            drop_last_line()
             self.refresh_list()
             flash_btn(instance, ok=True, msg="ОТМЕНЕНО")
 
