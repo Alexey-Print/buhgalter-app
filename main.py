@@ -1672,9 +1672,9 @@ class ClientsScreen(Screen):
             msg.bind(size=lambda s, v: setattr(s, 'text_size', v))
             byes = RoundedButton(text="\u0414\u0410, \u041e\u0427\u0418\u0421\u0422\u0418\u0422\u042c", bg_color=(0.5, 0.22, 0.55, 1), size_hint_y=None, height=100, bold=True)
             def _yes(x):
-                state = snapshot(app)
+                snap = snapshot(app)
                 app.profit_log = []
-                ok, message = commit(app, state)
+                ok, message = commit(app, snap)
                 if not ok:
                     self._stub_popup('ИСТОРИЯ ПРИБЫЛИ', message)
                     return
@@ -2364,9 +2364,9 @@ class ClientsScreen(Screen):
             if getattr(pop, 'is_dismissing_flag', False): return
             new_name = in_n.text.strip()
             if new_name:
-                state = snapshot(app)
+                snap = snapshot(app)
                 c['name'] = new_name
-                ok, message = commit(app, state)
+                ok, message = commit(app, snap)
                 if not ok:
                     self._stub_popup('ИСПОЛНИТЕЛЬ', message)
                     return
@@ -2385,9 +2385,9 @@ class ClientsScreen(Screen):
                 self._stub_popup('ИСПОЛНИТЕЛЬ', 'Исполнитель уже удалён')
                 return
             pop.is_dismissing_flag = True
-            state = snapshot(app)
+            snap = snapshot(app)
             app.clients.pop(pos[0])
-            ok, message = commit(app, state, 'удаление исполнителя')
+            ok, message = commit(app, snap, 'удаление исполнителя')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('ИСПОЛНИТЕЛЬ', message)
@@ -2411,9 +2411,9 @@ class ClientsScreen(Screen):
             new_name = in_new.text.strip()
             if new_name:
                 pop.is_dismissing_flag = True
-                state = snapshot(app)
+                snap = snapshot(app)
                 app.clients.append({'name': new_name, 'debt': '0', 'is_creditor': True})
-                ok, message = commit(app, state)
+                ok, message = commit(app, snap)
                 if not ok:
                     pop.is_dismissing_flag = False
                     self._stub_popup('ИСПОЛНИТЕЛЬ', message)
@@ -2490,9 +2490,9 @@ class ClientsScreen(Screen):
         def save_profit(val):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
-            state = snapshot(app)
+            snap = snapshot(app)
             app.profit_correction = str(round(val - tot_debt + banner_deficit, 2))
-            ok, message = commit(app, state, 'правка прибыли')
+            ok, message = commit(app, snap, 'правка прибыли')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('ПРИБЫЛЬ', message)
@@ -2534,11 +2534,11 @@ class ClientsScreen(Screen):
                     p_conf.is_dismissing_flag = False
                     self._stub_popup('СБРОС', 'Сброс не выполнен: не удалось сделать резервную копию. ' + str(exc))
                     return
-                state = snapshot(app)
+                snap = snapshot(app)
                 for c in app.clients:
                     c.update({'debt': '0', 'zakupka_total': '0', 'history': []})
                 app.profit_correction = '0'
-                ok, message = commit(app, state, 'общий сброс')
+                ok, message = commit(app, snap, 'общий сброс')
                 if not ok:
                     p_conf.is_dismissing_flag = False
                     self._stub_popup('СБРОС', message)
@@ -2822,12 +2822,12 @@ class ClientsScreen(Screen):
                 'total': format_num_simple(in_tot.text or '0'),
                 'remain': format_num_simple(rem_val)
             }
-            state = snapshot(app)
+            snap = snapshot(app)
             if is_new:
                 app.rolls.append(data)
             else:
                 app.rolls[ri] = data
-            ok, message = commit(app, state, 'рулон')
+            ok, message = commit(app, snap, 'рулон')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('РУЛОН', message)
@@ -2856,12 +2856,12 @@ class ClientsScreen(Screen):
                 if getattr(pop, 'is_dismissing_flag', False):
                     return
                 pop.is_dismissing_flag = True
-                state = snapshot(app)
+                snap = snapshot(app)
                 try:
                     app.rolls.pop(ri)
                 except Exception:
                     pass
-                ok, message = commit(app, state)
+                ok, message = commit(app, snap)
                 if not ok:
                     pop.is_dismissing_flag = False
                     self._stub_popup('РУЛОН', message)
@@ -3007,9 +3007,9 @@ class ClientsScreen(Screen):
                 app = App.get_running_app()
                 if not app:
                     return
-                state = snapshot(app)
+                snap = snapshot(app)
                 app.clients.append({'name': name, 'debt': '0', 'is_creditor': True})
-                ok, message = commit(app, state)
+                ok, message = commit(app, snap)
                 if not ok:
                     pop.is_dismissing_flag = False
                     self._stub_popup('ИСПОЛНИТЕЛЬ', message)
@@ -3327,9 +3327,9 @@ class ClientsScreen(Screen):
         def save_price(x):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
-            state = snapshot(app)
+            snap = snapshot(app)
             (app.prices if "banner" in mode else app.plenka_prices)[btn_idx] = ti.text.strip() or "0"
-            ok, message = commit(app, state)
+            ok, message = commit(app, snap)
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('ЦЕНА', message)
@@ -3685,7 +3685,7 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         if not app:
             return False
-        state = snapshot(app)
+        snap = snapshot(app)
         try:
             ensure_ids(app.clients)
             val = safe_float(res_t.replace(' руб', ''))
@@ -3779,7 +3779,7 @@ class ClientsScreen(Screen):
             if app.save_data() is not True:
                 raise OSError('Сохранение не подтверждено')
         except Exception as exc:
-            restore(app, state)
+            restore(app, snap)
             self._stub_popup('СОХРАНЕНИЕ ЗАКАЗА', 'Заказ не сохранён: ' + str(exc))
             return False
         self.refresh_list()
@@ -3865,9 +3865,9 @@ class ClientsScreen(Screen):
                 self._stub_popup('КЛИЕНТ', 'Клиент уже удалён')
                 return
             pop.is_dismissing_flag = True
-            state = snapshot(app)
+            snap = snapshot(app)
             app.clients.pop(pos[0])
-            ok, message = commit(app, state, 'удаление клиента')
+            ok, message = commit(app, snap, 'удаление клиента')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('КЛИЕНТ', message)
@@ -3973,9 +3973,9 @@ class ClientsScreen(Screen):
                 if getattr(pop, 'is_dismissing_flag', False): return
                 pop.is_dismissing_flag = True
                 app = App.get_running_app()
-                state = snapshot(app)
+                snap = snapshot(app)
                 app.clients.append({'name': in_n.text.strip(), 'debt': '0'})
-                ok, message = commit(app, state)
+                ok, message = commit(app, snap)
                 if not ok:
                     pop.is_dismissing_flag = False
                     self._stub_popup('НОВЫЙ КЛИЕНТ', message)
@@ -4007,10 +4007,10 @@ class ClientsScreen(Screen):
                 if getattr(p_conf, 'is_dismissing_flag', False): return
                 p_conf.is_dismissing_flag = True
                 cr = app.clients[idx]
-                state = snapshot(app)
+                snap = snapshot(app)
                 cr.setdefault('archived_history', []).extend(cr.get('history', []))
                 cr.update({'debt': '0', 'zakupka_total': '0', 'history': []})
-                ok, message = commit(app, state, 'обнуление исполнителя')
+                ok, message = commit(app, snap, 'обнуление исполнителя')
                 if not ok:
                     p_conf.is_dismissing_flag = False
                     self._stub_popup('ИСПОЛНИТЕЛЬ', message)
