@@ -9,7 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ['KIVY_NO_ARGS'] = '1'
 import main
-from accounting import money, reverse_order, purchase_banner, clear_history
+from accounting import money, reverse_order, purchase_banner, clear_history, period_totals
 
 
 class AccountingTests(unittest.TestCase):
@@ -205,3 +205,38 @@ class AccountingTests(unittest.TestCase):
         self.assertEqual(self.nastya['debt'], '0')
         self.assertEqual(self.oleg['debt'], '1 000')
         pop.dismiss()
+
+    def test_zero_cost_additional_order_leaves_no_creditor_charge(self):
+        order = self.add(amount=150.55, cost=0, mode='dop')
+        self.assertEqual(self.oleg['history'], [])
+        self.assertTrue(reverse_order(self.app, self.nastya, order)[0])
+        self.assertEqual(self.oleg['history'], [])
+
+    def test_history_button_deletes_exact_selected_order(self):
+        from kivy.core.window import Window
+        from kivy.uix.button import Button
+        from kivy.uix.popup import Popup
+        from kivy.clock import Clock
+        first = self.add(); second = self.add()
+        idx = next(i for i,c in enumerate(self.app.clients) if c is self.nastya)
+        self.screen.show_history_popup(idx)
+        Clock.tick()
+        pop = next(w for w in Window.children if isinstance(w, Popup))
+        deletes = [w for w in pop.walk() if isinstance(w, Button) and w.text == 'X']
+        self.assertEqual(len(deletes), 2)
+        # Pop-up captures the selected object, not an index that changes after a deletion.
+        one, two = deletes
+        one.dispatch('on_release')
+        self.assertEqual(len(self.nastya['history']), 1)
+        two.dispatch('on_release')
+        self.assertEqual(self.nastya['history'], [])
+        self.assertEqual(self.oleg['debt'], '1 000')
+        pop.dismiss()
+
+    def test_period_report_includes_purchases_and_archived_orders(self):
+        order = self.add(amount=5000, cost=0, via=False)
+        self.assertTrue(purchase_banner(self.app, 'white', 10000)[0])
+        self.assertEqual(period_totals(self.app, lambda d: True), (5000, 0, 10000, -5000))
+        self.assertTrue(clear_history(self.app, self.nastya)[0])
+        self.assertEqual(period_totals(self.app, lambda d: True), (5000, 0, 10000, -5000))
+        self.assertEqual(period_totals(self.app, lambda d: False), (0, 0, 0, 0))

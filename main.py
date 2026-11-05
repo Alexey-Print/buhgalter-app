@@ -4,7 +4,7 @@ import re
 import time
 import math
 import uuid
-from accounting import number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history
+from accounting import number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals
 from datetime import datetime
 from collections import defaultdict
 
@@ -1674,20 +1674,7 @@ class ClientsScreen(Screen):
                 return len(parts) == 3 and f"{parts[1]}.{parts[2]}" == month_str
             return True  # all
 
-        # Собираем статистику по заказам клиентов (не кредиторов, не спец-баннеров)
-        total_revenue = 0.0      # оборот (клиенты платят)
-        paid_to_print = 0.0      # отдано за печать (себестоимость)
-
-        for i, client in enumerate(app.clients):
-            if i in m_indices or i in special_debt_indices or i == o_idx:
-                continue
-            for item in (client.get('history') or []):
-                if not item or not in_period(item.get('date')):
-                    continue
-                total_revenue += safe_float(item.get('sum', 0))
-                paid_to_print += safe_float(item.get('print_cost', 0))
-
-        net_profit = total_revenue - paid_to_print
+        total_revenue, paid_to_print, banner_purchases, net_profit = period_totals(app, in_period)
 
         # ── UI ──
         scroll = ScrollView()
@@ -1756,6 +1743,7 @@ class ClientsScreen(Screen):
 
         content.add_widget(stat_row("ОБОРОТ (клиенты)", f"{format_num_simple(total_revenue)} р", "#8FD3FF"))
         content.add_widget(stat_row("ОТДАНО ЗА ПЕЧАТЬ", f"{format_num_simple(paid_to_print)} р", "#FF8A80"))
+        content.add_widget(stat_row("ЗАКУПКА БАНЕРОВ", f"{format_num_simple(banner_purchases)} р", "#FF8A80"))
 
         content.add_widget(Widget(size_hint_y=None, height=10))
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
@@ -3520,7 +3508,7 @@ class ClientsScreen(Screen):
             c['debt'] = format_num_simple(safe_float(c.get('debt', 0)) + val)
             app.profit_correction = str(round(safe_float(app.profit_correction) - print_cost, 2))
             m_indices, _, b_idx, black_idx = app.get_special_clients()
-            if via_malevich and creditor_idx is not None:
+            if via_malevich and creditor_idx is not None and print_cost > 0:
                 app.clients[creditor_idx]['debt'] = format_num_simple(safe_float(app.clients[creditor_idx].get('debt', 0)) + print_cost)
                 if 'history' not in app.clients[creditor_idx]:
                     app.clients[creditor_idx]['history'] = []

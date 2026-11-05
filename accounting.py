@@ -149,7 +149,7 @@ def reverse_order(app, client, item):
             return False, 'У старого заказа нет точной связи с прибылью. Данные не изменены'
     state = snapshot(app)
     try:
-        history.remove(item)
+        history.pop(next(i for i, h in enumerate(history) if h is item))
         client['debt'] = money(number(client.get('debt')) - val)
         app.profit_correction = money(number(app.profit_correction) + cost)
         if linked:
@@ -210,3 +210,19 @@ def clear_history(app, client):
         restore(app, state)
         return False, 'История не очищена: ' + str(exc)
     return True, 'История очищена'
+
+
+def period_totals(app, in_period):
+    creditors, remainder, white, black = app.get_special_clients()
+    excluded = set(creditors + [remainder, white, black])
+    revenue = printing = purchases = 0.0
+    for i, client in enumerate(app.clients):
+        if i in (white, black):
+            purchases += sum(number(h.get('sum')) for h in client.get('purchase_log', []) if in_period(h.get('date')))
+        if i in excluded:
+            continue
+        for h in client.get('archived_history', []) + client.get('history', []):
+            if h and in_period(h.get('date')):
+                revenue += number(h.get('sum'))
+                printing += number(h.get('print_cost'))
+    return tuple(round(v, 2) for v in (revenue, printing, purchases, revenue - printing - purchases))
