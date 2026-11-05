@@ -28,14 +28,15 @@ jobs:
     permissions:
       contents: write   # хранить зашифрованный ключ в ветке signing-key и выпускать Release
     env:
-      UCHET_KEY_PASS: ${{ secrets.UCHET_KEY_PASS }}
+      # Секрет; если браузер не даёт сохранить секрет — переменная репозитория (видна только владельцу).
+      UCHET_KEY_PASS: ${{ secrets.UCHET_KEY_PASS || vars.UCHET_KEY_PASS }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Require signing password
         run: |
           if [ "${#UCHET_KEY_PASS}" -lt 12 ]; then
-            echo "::error::Нет секрета UCHET_KEY_PASS (минимум 12 символов). Без постоянного ключа сборка запрещена."
+            echo "::error::Нет пароля UCHET_KEY_PASS (секрет или переменная, минимум 12 символов). Без постоянного ключа сборка запрещена."
             exit 1
           fi
 
