@@ -4,7 +4,7 @@ import re
 import time
 import math
 import uuid
-from accounting import number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals
+from accounting import number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage
 from datetime import datetime
 from collections import defaultdict
 
@@ -35,6 +35,9 @@ except Exception:
     pass
 
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+if os.environ.get('ANDROID_ARGUMENT'):
+    from android.storage import app_storage_path
+    BASE_PATH = prepare_android_storage(app_storage_path())
 DATA_FILE = os.path.join(BASE_PATH, "business_data.json")
 
 # Фото пользователя, вшитое в код (JPEG, base64). Отдельный файл не нужен.

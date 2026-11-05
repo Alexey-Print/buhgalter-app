@@ -18,6 +18,9 @@ icon.filename = %(source.dir)s/icon.png
 orientation = portrait
 fullscreen = 0
 
+android.entrypoint = com.aleksey.uchet.UchetActivity
+android.add_src = android_src
+
 android.permissions =
 android.archs = arm64-v8a
 android.allow_backup = 1

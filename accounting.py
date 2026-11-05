@@ -226,3 +226,38 @@ def period_totals(app, in_period):
                 revenue += number(h.get('sum'))
                 printing += number(h.get('print_cost'))
     return tuple(round(v, 2) for v in (revenue, printing, purchases, revenue - printing - purchases))
+
+
+def prepare_android_storage(files_root):
+    """Copy legacy data before first use; never replace current data or delete the old copy.
+
+    UchetActivity unpacks to uchet_runtime, so the previous /files/app survives
+    Android's asset cleanup. Business data lives outside both runtime directories.
+    """
+    import shutil
+    destination = os.path.join(files_root, 'uchet_data')
+    legacy = os.path.join(files_root, 'app')
+    os.makedirs(destination, exist_ok=True)
+
+    def preserve(source, target):
+        if os.path.isfile(source) and not os.path.exists(target):
+            fd, tmp = tempfile.mkstemp(prefix='.migrate-', dir=os.path.dirname(target))
+            try:
+                with os.fdopen(fd, 'wb') as out, open(source, 'rb') as inp:
+                    shutil.copyfileobj(inp, out)
+                    out.flush()
+                    os.fsync(out.fileno())
+                os.replace(tmp, target)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+
+    preserve(os.path.join(legacy, 'business_data.json'), os.path.join(destination, 'business_data.json'))
+    old_backups = os.path.join(legacy, 'backups')
+    if os.path.isdir(old_backups):
+        new_backups = os.path.join(destination, 'backups')
+        os.makedirs(new_backups, exist_ok=True)
+        for name in os.listdir(old_backups):
+            if name.startswith('business_data_') and name.endswith('.json'):
+                preserve(os.path.join(old_backups, name), os.path.join(new_backups, name))
+    return destination

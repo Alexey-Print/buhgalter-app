@@ -9,7 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ['KIVY_NO_ARGS'] = '1'
 import main
-from accounting import money, reverse_order, purchase_banner, clear_history, period_totals
+from accounting import money, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage
 
 
 class AccountingTests(unittest.TestCase):
@@ -240,3 +240,29 @@ class AccountingTests(unittest.TestCase):
         self.assertTrue(clear_history(self.app, self.nastya)[0])
         self.assertEqual(period_totals(self.app, lambda d: True), (5000, 0, 10000, -5000))
         self.assertEqual(period_totals(self.app, lambda d: False), (0, 0, 0, 0))
+
+    def test_android_migration_survives_runtime_cleanup_and_is_idempotent(self):
+        import shutil
+        old = Path(self.path) / 'app'
+        old.mkdir()
+        (old / 'business_data.json').write_bytes(b'{"clients": [], "custom": 17}')
+        (old / 'backups').mkdir()
+        (old / 'backups' / 'business_data_20261105.json').write_bytes(b'{"clients": []}')
+        current = Path(prepare_android_storage(self.path))
+        self.assertEqual((current / 'business_data.json').read_bytes(), (old / 'business_data.json').read_bytes())
+        self.assertTrue((current / 'backups' / 'business_data_20261105.json').exists())
+        self.assertTrue((old / 'business_data.json').exists())
+        (current / 'business_data.json').write_bytes(b'{"clients": [], "newer": 19}')
+        prepare_android_storage(self.path)
+        self.assertIn(b'newer', (current / 'business_data.json').read_bytes())
+        shutil.rmtree(old)  # cleanup of a runtime must not delete permanent data
+        self.assertIn(b'newer', (current / 'business_data.json').read_bytes())
+
+    def test_android_migration_failure_preserves_legacy(self):
+        old = Path(self.path) / 'app'; old.mkdir()
+        (old / 'business_data.json').write_bytes(b'original')
+        with patch('accounting.os.replace', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                prepare_android_storage(self.path)
+        self.assertEqual((old / 'business_data.json').read_bytes(), b'original')
+        self.assertFalse((Path(self.path) / 'uchet_data' / 'business_data.json').exists())
