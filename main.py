@@ -2794,12 +2794,13 @@ class ClientsScreen(Screen):
 
         # Компактно: поля парами, чтобы «СОХРАНИТЬ» было видно над клавиатурой.
         def _pair(left, right):
-            row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=132)
+            # Высоты в пикселях как у прежних полей (140): на телефоне шрифт крупный.
+            row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=196)
             for caption, color, field in (left, right):
-                col = BoxLayout(orientation='vertical', spacing=4)
-                lbl = Label(text=caption, markup=True, font_size='14sp', color=color, size_hint_y=None, height=28)
+                col = BoxLayout(orientation='vertical', spacing=6)
+                lbl = Label(text=caption, markup=True, font_size='14sp', color=color, size_hint_y=None, height=46)
                 col.add_widget(lbl)
-                col.add_widget(_bordered_field(field, color, 100, 1.0))
+                col.add_widget(_bordered_field(field, color, 140, 1.0))
                 row.add_widget(col)
             content.add_widget(row)
 
@@ -2807,8 +2808,6 @@ class ClientsScreen(Screen):
         in_use = _dark_input(hint_text="расход, м", input_type='number', input_filter='float')
         in_tot = _dark_input(text=format_num_simple(roll.get('total', '0')) if not is_new else "", hint_text="длина всего", input_type='number', input_filter='float')
         in_rem = _dark_input(text=format_num_simple(roll.get('remain', '0')) if not is_new else "", hint_text="сколько осталось", input_type='number', input_filter='float')
-        for f in (in_w, in_use, in_tot, in_rem):
-            f.padding = [8, 26, 8, 10]
         _pair(("[b]ВСЕГО, м[/b]", (0.55, 0.6, 0.7, 1), in_tot), ("[b]ОСТАТОК, м[/b]", (0.41, 0.94, 0.68, 1), in_rem))
         _pair(("[b]ШИРИНА, м[/b]", (0.4, 0.8, 1, 1), in_w), ("[b]СПИСАТЬ РАСХОД[/b]", (1.0, 0.72, 0.3, 1), in_use))
 
