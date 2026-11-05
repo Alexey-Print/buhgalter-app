@@ -2065,7 +2065,12 @@ class ClientsScreen(Screen):
                     list_layout.add_widget(row)
 
         def delete_item_callback(orig_idx, date_str):
+            if not (0 <= orig_idx < len(history)):
+                return
             item = history[orig_idx]
+            # Запись исполнителя нельзя удалять отдельно от заказа клиента.
+            if item.get('source_oid'):
+                return
             _linked_history = None
             _linked_pos = None
             if item.get('via_malevich') and safe_float(item.get('print_cost', 0)) > 0:
@@ -2106,18 +2111,10 @@ class ClientsScreen(Screen):
             if _uncovered > 0:
                 app.profit_correction = str(round(safe_float(app.profit_correction) - _uncovered, 2))
             m_indices, _, b_idx, c_idx_special = app.get_special_clients()
-            if v_malevich:
-                target_m_idx = None
-                if cr_name:
-                    for mi in m_indices:
-                        if app.clients[mi].get('name') == cr_name:
-                            target_m_idx = mi
-                            break
-                if _linked_history is not None:
-                    m_curr = safe_float(_linked_creditor.get('debt', 0))
-                    _linked_creditor['debt'] = format_num_simple(max(0.0, m_curr - p_cost))
-                    if _linked_history is not None:
-                        _linked_history.pop(_linked_pos)
+            if _linked_history is not None:
+                m_curr = safe_float(_linked_creditor.get('debt', 0))
+                _linked_creditor['debt'] = format_num_simple(max(0.0, m_curr - p_cost))
+                _linked_history.pop(_linked_pos)
             target_idx = b_idx if "banner_white" in c_mode else (c_idx_special if "banner_black" in c_mode else None)
             if target_idx is not None:
                 t = app.clients[target_idx]
@@ -3426,17 +3423,9 @@ class ClientsScreen(Screen):
             _undo_hist.pop(_undo_matches[0])
             app.profit_correction = str(round(safe_float(app.profit_correction) + p_cost, 2))
             m_indices, _, b_idx, black_idx = app.get_special_clients()
-            if v_malevich:
-                target_m_idx = None
-                if cr_name_target:
-                    for mi in m_indices:
-                        if app.clients[mi].get('name') == cr_name_target:
-                            target_m_idx = mi
-                            break
-                if _undo_linked_hist is not None:
-                    _undo_linked_creditor['debt'] = format_num_simple(max(0.0, safe_float(_undo_linked_creditor.get('debt', 0)) - p_cost))
-                    if _undo_linked_hist is not None:
-                        _undo_linked_hist.pop(_undo_linked_pos)
+            if _undo_linked_hist is not None:
+                _undo_linked_creditor['debt'] = format_num_simple(max(0.0, safe_float(_undo_linked_creditor.get('debt', 0)) - p_cost))
+                _undo_linked_hist.pop(_undo_linked_pos)
             t_idx = b_idx if "banner_white" in c_mode else (black_idx if "banner_black" in c_mode else None)
             if t_idx is not None:
                 deducted = safe_float(last.get('banner_deduction', 0.0))
