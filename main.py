@@ -2065,6 +2065,20 @@ class ClientsScreen(Screen):
                     list_layout.add_widget(row)
 
         def delete_item_callback(orig_idx, date_str):
+            item = history[orig_idx]
+            _linked_history = None
+            _linked_pos = None
+            if item.get('via_malevich') and safe_float(item.get('print_cost', 0)) > 0:
+                _order_oid = item.get('oid')
+                _matches = [c for c in app.clients if c.get('is_creditor') and c.get('name') == item.get('creditor_name')]
+                if len(_matches) != 1 or not _order_oid:
+                    return
+                _linked_creditor = _matches[0]
+                _linked_history = _linked_creditor.get('history', [])
+                _positions = [i for i, h in enumerate(_linked_history) if h.get('source_oid') == _order_oid]
+                if len(_positions) != 1:
+                    return
+                _linked_pos = _positions[0]
             item = history.pop(orig_idx)
             try:
                 _doid = item.get('oid')
@@ -2099,17 +2113,11 @@ class ClientsScreen(Screen):
                         if app.clients[mi].get('name') == cr_name:
                             target_m_idx = mi
                             break
-                if target_m_idx is None and m_indices:
-                    target_m_idx = m_indices[0]
-                if target_m_idx is not None:
-                    m_curr = safe_float(app.clients[target_m_idx].get('debt', 0))
-                    app.clients[target_m_idx]['debt'] = format_num_simple(max(0.0, m_curr - p_cost))
-                    if 'history' in app.clients[target_m_idx]:
-                        for i in reversed(range(len(app.clients[target_m_idx]['history']))):
-                            m_item = app.clients[target_m_idx]['history'][i]
-                            if m_item.get('date') == item.get('date') and safe_float(m_item.get('sum')) == p_cost:
-                                app.clients[target_m_idx]['history'].pop(i)
-                                break
+                if _linked_history is not None:
+                    m_curr = safe_float(_linked_creditor.get('debt', 0))
+                    _linked_creditor['debt'] = format_num_simple(max(0.0, m_curr - p_cost))
+                    if _linked_history is not None:
+                        _linked_history.pop(_linked_pos)
             target_idx = b_idx if "banner_white" in c_mode else (c_idx_special if "banner_black" in c_mode else None)
             if target_idx is not None:
                 t = app.clients[target_idx]
@@ -3377,7 +3385,32 @@ class ClientsScreen(Screen):
 
         def on_undo_clicked(instance):
             if not self.raw_history_lines: return
-            last = self.raw_history_lines.pop()
+            last = self.raw_history_lines[-1]
+            _undo_oid = last.get('oid')
+            _undo_client_idx = last.get('client_idx', idx)
+            if not _undo_oid or not (0 <= _undo_client_idx < len(app.clients)):
+                flash_btn(instance, ok=False, msg="ЗАКАЗ НЕ НАЙДЕН")
+                return
+            _undo_hist = app.clients[_undo_client_idx].get('history', [])
+            _undo_matches = [j for j, h in enumerate(_undo_hist) if h.get('oid') == _undo_oid]
+            if len(_undo_matches) != 1:
+                flash_btn(instance, ok=False, msg="ЗАКАЗ НЕ НАЙДЕН")
+                return
+            _undo_linked_hist = None
+            _undo_linked_pos = None
+            if last.get('via_malevich') and safe_float(last.get('print_cost', 0)) > 0:
+                _undo_creditors = [c for c in app.clients if c.get('is_creditor') and c.get('name') == last.get('creditor_name')]
+                if len(_undo_creditors) != 1:
+                    flash_btn(instance, ok=False, msg="ИСПОЛНИТЕЛЬ НЕ НАЙДЕН")
+                    return
+                _undo_linked_creditor = _undo_creditors[0]
+                _undo_linked_hist = _undo_linked_creditor.get('history', [])
+                _undo_linked_matches = [j for j, h in enumerate(_undo_linked_hist) if h.get('source_oid') == _undo_oid]
+                if len(_undo_linked_matches) != 1:
+                    flash_btn(instance, ok=False, msg="СВЯЗЬ НЕ НАЙДЕНА")
+                    return
+                _undo_linked_pos = _undo_linked_matches[0]
+            self.raw_history_lines.pop()
             val = safe_float(last['sum'])
             self.order_total_accumulator -= val
             btn_total_order.text = f"СУММА ЗАКАЗА:\n{format_num_simple(self.order_total_accumulator)} руб"
@@ -3390,8 +3423,7 @@ class ClientsScreen(Screen):
             c_idx_target = last.get('client_idx', idx)
             cr_name_target = last.get('creditor_name')
             app.clients[c_idx_target]['debt'] = format_num_simple(max(0.0, safe_float(app.clients[c_idx_target].get('debt', 0)) - val))
-            if 'history' in app.clients[c_idx_target] and app.clients[c_idx_target]['history']:
-                app.clients[c_idx_target]['history'].pop()
+            _undo_hist.pop(_undo_matches[0])
             app.profit_correction = str(round(safe_float(app.profit_correction) + p_cost, 2))
             m_indices, _, b_idx, black_idx = app.get_special_clients()
             if v_malevich:
@@ -3401,13 +3433,10 @@ class ClientsScreen(Screen):
                         if app.clients[mi].get('name') == cr_name_target:
                             target_m_idx = mi
                             break
-                if target_m_idx is None and m_indices:
-                    target_m_idx = m_indices[0]
-                if target_m_idx is not None:
-                    app.clients[target_m_idx]['debt'] = format_num_simple(max(0.0, safe_float(app.clients[target_m_idx].get('debt', 0)) - p_cost))
-                    if 'history' in app.clients[target_m_idx] and app.clients[target_m_idx]['history']:
-                        if safe_float(app.clients[target_m_idx]['history'][-1].get('sum', 0)) == p_cost:
-                            app.clients[target_m_idx]['history'].pop()
+                if _undo_linked_hist is not None:
+                    _undo_linked_creditor['debt'] = format_num_simple(max(0.0, safe_float(_undo_linked_creditor.get('debt', 0)) - p_cost))
+                    if _undo_linked_hist is not None:
+                        _undo_linked_hist.pop(_undo_linked_pos)
             t_idx = b_idx if "banner_white" in c_mode else (black_idx if "banner_black" in c_mode else None)
             if t_idx is not None:
                 deducted = safe_float(last.get('banner_deduction', 0.0))
