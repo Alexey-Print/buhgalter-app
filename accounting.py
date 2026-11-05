@@ -40,7 +40,8 @@ def ensure_ids(clients):
 
 
 def snapshot(app):
-    values = (app.clients, app.profit_correction, app.profit_log, app.rolls)
+    values = (app.clients, app.profit_correction, app.profit_log, app.rolls,
+              getattr(app, 'prices', []), getattr(app, 'plenka_prices', []), getattr(app, 'print_cost', '55'))
     originals = {}
     def collect(value):
         if isinstance(value, (dict, list)) and id(value) not in originals:
@@ -72,7 +73,19 @@ def restore(app, state):
         else:
             target[:] = [recover(v) for v in value]
         return target
-    app.clients, app.profit_correction, app.profit_log, app.rolls = tuple(recover(v) for v in saved)
+    (app.clients, app.profit_correction, app.profit_log, app.rolls,
+     app.prices, app.plenka_prices, app.print_cost) = tuple(recover(v) for v in saved)
+
+
+def commit(app, state):
+    """Сохранить изменения; при любой ошибке вернуть память к снимку state."""
+    try:
+        if app.save_data() is not True:
+            raise OSError('Сохранение не подтверждено')
+    except Exception as exc:
+        restore(app, state)
+        return False, 'Не сохранено, повторите: ' + str(exc)
+    return True, 'Сохранено'
 
 
 def atomic_write(path, data):
@@ -211,6 +224,20 @@ def change_balance(app, client, new_value, name=None):
         restore(app, state)
         return False, 'Не сохранено, повторите: ' + str(exc)
     return True, 'Сохранено'
+
+
+def creditor_is_referenced(app, creditor):
+    """Есть ли заказы клиентов (активные или архивные), связанные с этим исполнителем."""
+    cid, name = creditor.get('cid'), creditor.get('name')
+    for client in app.clients:
+        if client is creditor:
+            continue
+        for h in client.get('history', []) + client.get('archived_history', []):
+            if h.get('via_malevich') and ((cid and h.get('creditor_id') == cid) or
+                                         (not h.get('creditor_id') and h.get('creditor_name') == name)):
+                return True
+    return bool(creditor.get('history') or creditor.get('archived_history')) and \
+        any(h.get('source_oid') for h in creditor.get('history', []) + creditor.get('archived_history', []))
 
 
 def purchase_banner(app, color, amount, width='', length=0):

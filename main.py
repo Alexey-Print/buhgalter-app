@@ -4,7 +4,7 @@ import re
 import time
 import math
 import uuid
-from accounting import number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
+from accounting import commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
 from datetime import datetime
 from collections import defaultdict
 
@@ -1628,8 +1628,12 @@ class ClientsScreen(Screen):
             msg.bind(size=lambda s, v: setattr(s, 'text_size', v))
             byes = RoundedButton(text="\u0414\u0410, \u041e\u0427\u0418\u0421\u0422\u0418\u0422\u042c", bg_color=(0.5, 0.22, 0.55, 1), size_hint_y=None, height=100, bold=True)
             def _yes(x):
+                state = snapshot(app)
                 app.profit_log = []
-                app.save_data()
+                ok, message = commit(app, state)
+                if not ok:
+                    self._stub_popup('ИСТОРИЯ ПРИБЫЛИ', message)
+                    return
                 cp.dismiss()
                 pop.dismiss()
             byes.bind(on_release=_yes)
@@ -2316,17 +2320,34 @@ class ClientsScreen(Screen):
             if getattr(pop, 'is_dismissing_flag', False): return
             new_name = in_n.text.strip()
             if new_name:
+                state = snapshot(app)
                 c['name'] = new_name
-                app.save_data()
+                ok, message = commit(app, state)
+                if not ok:
+                    self._stub_popup('ИСПОЛНИТЕЛЬ', message)
+                    return
                 self.refresh_list()
             pop.is_dismissing_flag = True
             pop.dismiss()
 
         def on_delete(instance):
             if getattr(pop, 'is_dismissing_flag', False): return
+            if creditor_is_referenced(app, c):
+                self._stub_popup('ИСПОЛНИТЕЛЬ', 'Нельзя удалить: на исполнителя ссылаются заказы клиентов. '
+                                 'Иначе их нельзя будет точно отменить')
+                return
+            pos = [i for i, x in enumerate(app.clients) if x is c]
+            if len(pos) != 1:
+                self._stub_popup('ИСПОЛНИТЕЛЬ', 'Исполнитель уже удалён')
+                return
             pop.is_dismissing_flag = True
-            app.clients.pop(idx)
-            app.save_data()
+            state = snapshot(app)
+            app.clients.pop(pos[0])
+            ok, message = commit(app, state)
+            if not ok:
+                pop.is_dismissing_flag = False
+                self._stub_popup('ИСПОЛНИТЕЛЬ', message)
+                return
             self.refresh_list()
             pop.dismiss()
 
@@ -2346,8 +2367,13 @@ class ClientsScreen(Screen):
             new_name = in_new.text.strip()
             if new_name:
                 pop.is_dismissing_flag = True
+                state = snapshot(app)
                 app.clients.append({'name': new_name, 'debt': '0', 'is_creditor': True})
-                app.save_data()
+                ok, message = commit(app, state)
+                if not ok:
+                    pop.is_dismissing_flag = False
+                    self._stub_popup('ИСПОЛНИТЕЛЬ', message)
+                    return
                 self.refresh_list()
                 pop.dismiss()
 
@@ -2420,8 +2446,14 @@ class ClientsScreen(Screen):
         def save_profit(val):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
+            state = snapshot(app)
             app.profit_correction = str(round(val - tot_debt + banner_deficit, 2))
-            app.save_data(); self.refresh_list(); pop.dismiss()
+            ok, message = commit(app, state)
+            if not ok:
+                pop.is_dismissing_flag = False
+                self._stub_popup('ПРИБЫЛЬ', message)
+                return
+            self.refresh_list(); pop.dismiss()
 
         btn_save = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.15, 0.55, 0.35, 1),
                                  height=90, size_hint_y=None, bold=True, font_size='22sp')
@@ -2452,10 +2484,21 @@ class ClientsScreen(Screen):
             def on_yes_global(x):
                 if getattr(p_conf, 'is_dismissing_flag', False): return
                 p_conf.is_dismissing_flag = True
+                try:
+                    app.write_verified_backup()
+                except Exception as exc:
+                    p_conf.is_dismissing_flag = False
+                    self._stub_popup('СБРОС', 'Сброс не выполнен: не удалось сделать резервную копию. ' + str(exc))
+                    return
+                state = snapshot(app)
                 for c in app.clients:
                     c.update({'debt': '0', 'zakupka_total': '0', 'history': []})
                 app.profit_correction = '0'
-                app.save_data()
+                ok, message = commit(app, state)
+                if not ok:
+                    p_conf.is_dismissing_flag = False
+                    self._stub_popup('СБРОС', message)
+                    return
                 self.refresh_list()
                 p_conf.dismiss()
                 if not getattr(pop, 'is_dismissing_flag', False):
@@ -2659,11 +2702,16 @@ class ClientsScreen(Screen):
                 'total': format_num_simple(in_tot.text or '0'),
                 'remain': format_num_simple(rem_val)
             }
+            state = snapshot(app)
             if is_new:
                 app.rolls.append(data)
             else:
                 app.rolls[ri] = data
-            app.save_data()
+            ok, message = commit(app, state)
+            if not ok:
+                pop.is_dismissing_flag = False
+                self._stub_popup('РУЛОН', message)
+                return
             self.refresh_list()
             pop.dismiss()
             try:
@@ -2688,11 +2736,16 @@ class ClientsScreen(Screen):
                 if getattr(pop, 'is_dismissing_flag', False):
                     return
                 pop.is_dismissing_flag = True
+                state = snapshot(app)
                 try:
                     app.rolls.pop(ri)
                 except Exception:
                     pass
-                app.save_data()
+                ok, message = commit(app, state)
+                if not ok:
+                    pop.is_dismissing_flag = False
+                    self._stub_popup('РУЛОН', message)
+                    return
                 self.refresh_list()
                 pop.dismiss()
                 try:
@@ -2834,8 +2887,13 @@ class ClientsScreen(Screen):
                 app = App.get_running_app()
                 if not app:
                     return
+                state = snapshot(app)
                 app.clients.append({'name': name, 'debt': '0', 'is_creditor': True})
-                app.save_data()
+                ok, message = commit(app, state)
+                if not ok:
+                    pop.is_dismissing_flag = False
+                    self._stub_popup('ИСПОЛНИТЕЛЬ', message)
+                    return
                 self.refresh_list()
                 pop.dismiss()
                 self.safe_transition(parent_pop, self.show_client_choice_menu, client_idx, creditor_idx="unselected")
@@ -3149,8 +3207,14 @@ class ClientsScreen(Screen):
         def save_price(x):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
+            state = snapshot(app)
             (app.prices if "banner" in mode else app.plenka_prices)[btn_idx] = ti.text.strip() or "0"
-            app.save_data(); self.build_price_grid(mode); pop.dismiss()
+            ok, message = commit(app, state)
+            if not ok:
+                pop.is_dismissing_flag = False
+                self._stub_popup('ЦЕНА', message)
+                return
+            self.build_price_grid(mode); pop.dismiss()
 
         btn_save = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.6, 0.4, 1), size_hint_y=None, height=100, font_size='20sp', bold=True)
         btn_save.bind(on_release=save_price)
@@ -3237,13 +3301,26 @@ class ClientsScreen(Screen):
             cost_res = Label(text="", markup=True, font_size='17sp', size_hint_y=None, height=0, opacity=0)
             profit_res = Label(text="", markup=True, font_size='21sp', size_hint_y=None, height=0, opacity=0)
 
+        pending_cost_save = [None]
+
         def recalculate_total(*a):
             l, w, c, cost = safe_float(in_l.text), safe_float(in_w.text), safe_float(in_c.text, 1), safe_float(in_cost.text)
             client_pay = l * w * self.current_calc_price * c
             print_pay = l * w * cost * c
             if not _show_print_cost:
                 res.text = f"[b]КЛИЕНТ: {format_num_simple(client_pay)} руб[/b]"
-            app.print_cost = str(cost); app.save_data()
+            app.print_cost = str(cost)
+            if pending_cost_save[0] is not None:
+                pending_cost_save[0].cancel()
+            pending_cost_save[0] = Clock.schedule_once(save_cost_later, 1.5)
+
+        def save_cost_later(dt):
+            pending_cost_save[0] = None
+            try:
+                if app.save_data() is not True:
+                    raise OSError('Сохранение не подтверждено')
+            except Exception as exc:
+                self._stub_popup('СТОИМОСТЬ ПЕЧАТИ', 'Не сохранено: ' + str(exc))
 
         for inp in (in_l, in_w, in_c, in_cost): inp.bind(text=recalculate_total)
         pop, btn_box = AppPopup(title="", content=scroll, size_hint=(0.9, 0.9)), BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=140)
@@ -3643,9 +3720,18 @@ class ClientsScreen(Screen):
         def on_delete(instance):
             if getattr(pop, 'is_dismissing_flag', False):
                 return
+            pos = [i for i, x in enumerate(app.clients) if x is c]
+            if len(pos) != 1:
+                self._stub_popup('КЛИЕНТ', 'Клиент уже удалён')
+                return
             pop.is_dismissing_flag = True
-            app.clients.pop(idx)
-            app.save_data()
+            state = snapshot(app)
+            app.clients.pop(pos[0])
+            ok, message = commit(app, state)
+            if not ok:
+                pop.is_dismissing_flag = False
+                self._stub_popup('КЛИЕНТ', message)
+                return
             self.refresh_list()
             pop.dismiss()
 
@@ -3746,8 +3832,15 @@ class ClientsScreen(Screen):
             if in_n.text.strip():
                 if getattr(pop, 'is_dismissing_flag', False): return
                 pop.is_dismissing_flag = True
-                App.get_running_app().clients.append({'name': in_n.text.strip(), 'debt': '0'})
-                App.get_running_app().save_data(); self.refresh_list(); pop.dismiss()
+                app = App.get_running_app()
+                state = snapshot(app)
+                app.clients.append({'name': in_n.text.strip(), 'debt': '0'})
+                ok, message = commit(app, state)
+                if not ok:
+                    pop.is_dismissing_flag = False
+                    self._stub_popup('НОВЫЙ КЛИЕНТ', message)
+                    return
+                self.refresh_list(); pop.dismiss()
 
         btn.bind(on_release=save_new)
         content.add_widget(in_n); content.add_widget(btn)
@@ -3773,8 +3866,15 @@ class ClientsScreen(Screen):
             def on_yes(x):
                 if getattr(p_conf, 'is_dismissing_flag', False): return
                 p_conf.is_dismissing_flag = True
-                app.clients[idx].update({'debt': '0', 'zakupka_total': '0', 'history': []})
-                app.save_data()
+                cr = app.clients[idx]
+                state = snapshot(app)
+                cr.setdefault('archived_history', []).extend(cr.get('history', []))
+                cr.update({'debt': '0', 'zakupka_total': '0', 'history': []})
+                ok, message = commit(app, state)
+                if not ok:
+                    p_conf.is_dismissing_flag = False
+                    self._stub_popup('ИСПОЛНИТЕЛЬ', message)
+                    return
                 self.refresh_list()
                 p_conf.dismiss()
                 if not getattr(pop, 'is_dismissing_flag', False):
@@ -4043,7 +4143,7 @@ class BusinessApp(App):
         except Exception:
             pass
 
-    def save_data(self):
+    def _current_data(self):
         ensure_ids(self.clients)
         data = dict(getattr(self, '_extra_data', {}))
         data.update({"clients": self.clients, "prices": self.prices,
@@ -4052,6 +4152,28 @@ class BusinessApp(App):
                      "print_cost": getattr(self, 'print_cost', "55"),
                      "profit_log": getattr(self, 'profit_log', []),
                      "rolls": getattr(self, 'rolls', [])})
+        return data
+
+    def write_verified_backup(self):
+        """Обязательная копия всей базы (без ограничения по времени); проверяется чтением."""
+        text = json.dumps(self._current_data(), ensure_ascii=False, indent=4, allow_nan=False)
+        # Отдельная папка: обычная ротация 40 копий её не удаляет.
+        bdir = os.path.join(BASE_PATH, "backups", "before_reset")
+        os.makedirs(bdir, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(bdir, f"before_reset_{stamp}.json")
+        n = 1
+        while os.path.exists(path):
+            path = os.path.join(bdir, f"before_reset_{stamp}_{n}.json")
+            n += 1
+        atomic_write(path, json.loads(text))
+        with open(path, "r", encoding="utf-8") as f:
+            if f.read() != text:
+                raise OSError("Копия не совпадает с базой")
+        return path
+
+    def save_data(self):
+        data = self._current_data()
         text = atomic_write(DATA_FILE, data)
         self._write_backup(text)
         return True
