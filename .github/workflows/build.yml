@@ -89,14 +89,14 @@ jobs:
           docker run --rm \
             --entrypoint bash \
             -v "$PWD":/home/user/hostcwd \
-            -v "$RUNNER_TEMP/buildozer-home":/home/user/.buildozer \
+            -v "$RUNNER_TEMP/buildozer-home":/root/.buildozer \
             -v "$RUNNER_TEMP/ks":/ks:ro \
             -e P4A_RELEASE_KEYSTORE=/ks/uchet.keystore \
             -e P4A_RELEASE_KEYALIAS=uchet \
             -e P4A_RELEASE_KEYSTORE_PASSWD="$UCHET_KEY_PASS" \
             -e P4A_RELEASE_KEYALIAS_PASSWD="$UCHET_KEY_PASS" \
             kivy/buildozer@sha256:92860ae3822fd533b90ab11f7c2272859980d34b791b1454a09a90e9849a5c7a \
-            -c "cd /home/user/hostcwd && yes | buildozer android release" > build-android.log 2>&1
+            -c "git config --global --add safe.directory '*' && cd /home/user/hostcwd && yes | buildozer android release" > build-android.log 2>&1
           build_status=$?
           tail -n 160 build-android.log
           exit "$build_status"
