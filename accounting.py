@@ -77,8 +77,9 @@ def restore(app, state):
      app.prices, app.plenka_prices, app.print_cost) = tuple(recover(v) for v in saved)
 
 
-def commit(app, state):
+def commit(app, state, op=''):
     """Сохранить изменения; при любой ошибке вернуть память к снимку state."""
+    app._op = op
     try:
         if app.save_data() is not True:
             raise OSError('Сохранение не подтверждено')
@@ -173,6 +174,7 @@ def reverse_order(app, client, item):
             material['debt'] = money(number(material.get('debt')) + amount)
             app.profit_correction = money(number(app.profit_correction) + amount)
         app.profit_log[:] = [p for p in app.profit_log if not (oid and p.get('oid') == oid)]
+        app._op = 'удаление заказа: ' + str(item.get('desc', ''))
         if app.save_data() is not True:
             raise OSError('Сохранение не подтверждено')
     except Exception as exc:
@@ -200,7 +202,7 @@ def payment_result(old_value, paid):
     return min(Decimal('0'), old + paid)
 
 
-def change_balance(app, client, new_value, name=None):
+def change_balance(app, client, new_value, name=None, op='правка долга'):
     """Изменить долг (и имя) одной транзакцией. Прибыль меняется только при росте
     положительной части долга; оплата, переплата и её возврат прибыль не меняют."""
     if not any(c is client for c in app.clients):
@@ -218,6 +220,7 @@ def change_balance(app, client, new_value, name=None):
         client['debt'] = money(new)
         if new == 0:
             client['zakupka_total'] = '0'
+        app._op = op
         if app.save_data() is not True:
             raise OSError('Сохранение не подтверждено')
     except Exception as exc:
@@ -260,6 +263,7 @@ def purchase_banner(app, color, amount, width='', length=0):
         client.setdefault('purchase_log', []).append({'date': datetime.now().strftime('%d.%m.%y %H:%M'), 'sum': money(amount)})
         if length > 0:
             app.rolls.append({'color': color, 'width': str(width).strip() or '0', 'total': money(length), 'remain': money(length)})
+        app._op = 'закупка банера'
         if app.save_data() is not True:
             raise OSError('Сохранение не подтверждено')
     except Exception as exc:
@@ -333,3 +337,88 @@ def prepare_android_storage(files_root):
             if name.startswith('business_data_') and name.endswith('.json'):
                 preserve(os.path.join(old_backups, name), os.path.join(new_backups, name))
     return destination
+
+
+JOURNAL_LIMIT = 20000
+PROFIT_KEY = '__profit__'
+
+
+def journal_balances(app):
+    """Текущие долги по постоянным cid и корректировка прибыли — основа журнала."""
+    result = {c.get('cid'): (c.get('name', ''), money(c.get('debt'))) for c in app.clients if c.get('cid')}
+    result[PROFIT_KEY] = ('ПРИБЫЛЬ (корректировка)', money(app.profit_correction))
+    return result
+
+
+def journal_entries(base, now, op):
+    """Строки журнала «было → стало» для всех изменившихся сумм."""
+    if base is None:
+        return []
+    from datetime import datetime
+    stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    entries = []
+    for key in list(base) + [k for k in now if k not in base]:
+        was, cur = base.get(key), now.get(key)
+        was_sum = was[1] if was else None
+        cur_sum = cur[1] if cur else None
+        if was_sum != cur_sum:
+            label = op
+            if was is None and op == 'изменение':
+                label = 'новая карточка'
+            elif cur is None and op == 'изменение':
+                label = 'карточка удалена'
+            entries.append({'t': stamp, 'op': label, 'cid': key, 'name': (cur or was)[0],
+                            'was': was_sum, 'now': cur_sum})
+    return entries
+
+
+def check_integrity(app):
+    """Автоматическая перепроверка базы. Возвращает список понятных замечаний (пустой — всё сходится)."""
+    problems = []
+    cids = [c.get('cid') for c in app.clients]
+    if len(set(cids)) != len(cids):
+        problems.append('Повторяются номера карточек клиентов')
+    orders = {}
+    for c in app.clients:
+        for h in c.get('history', []) + c.get('archived_history', []):
+            if h.get('oid'):
+                orders.setdefault(h['oid'], []).append((c, h))
+    for oid, found in orders.items():
+        if len(found) > 1:
+            problems.append(f'Заказ записан дважды: {found[0][0].get("name", "")}')
+    charges = {}
+    for c in app.clients:
+        if not c.get('is_creditor'):
+            continue
+        for h in c.get('history', []) + c.get('archived_history', []):
+            if h.get('source_oid'):
+                charges.setdefault(h['source_oid'], []).append((c, h))
+    for oid, found in charges.items():
+        creditor, charge = found[0]
+        if len(found) > 1:
+            problems.append(f'{creditor.get("name", "")}: начисление за печать записано дважды')
+        if oid not in orders:
+            problems.append(f'{creditor.get("name", "")}: начисление {money(charge.get("sum"))} без заказа клиента')
+    by_cid = {c.get('cid'): c for c in app.clients}
+    for oid, found in orders.items():
+        client, order = found[0]
+        if order.get('via_malevich') and order.get('creditor_id') and number(order.get('print_cost')) > 0:
+            linked = charges.get(oid, [])
+            if len(linked) != 1:
+                problems.append(f'{client.get("name", "")}: у заказа нет начисления исполнителю')
+            elif abs(number(linked[0][1].get('sum')) - number(order.get('print_cost'))) > .001:
+                problems.append(f'{client.get("name", "")}: сумма печати не совпадает у исполнителя')
+            elif linked[0][0].get('cid') != order['creditor_id']:
+                problems.append(f'{client.get("name", "")}: начисление записано другому исполнителю')
+        for idkey in ('banner_deduction_id', 'banner_deduction2_id'):
+            if order.get(idkey) and order[idkey] not in by_cid:
+                problems.append(f'{client.get("name", "")}: материал заказа не найден')
+    last = {}
+    for e in getattr(app, 'journal', []) or []:
+        last[e.get('cid')] = e.get('now')
+    current = journal_balances(app)
+    for key, value in last.items():
+        if value is not None and key in current and current[key][1] != value:
+            problems.append(f'{current[key][0]}: сумма изменена мимо журнала '
+                            f'(по журналу {value}, сейчас {current[key][1]})')
+    return problems

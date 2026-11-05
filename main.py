@@ -4,7 +4,7 @@ import re
 import time
 import math
 import uuid
-from accounting import commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
+from accounting import JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
 from datetime import datetime
 from collections import defaultdict
 
@@ -970,7 +970,7 @@ class MainMenu(Screen):
             pop.is_dismissing_flag = True
             minus_val = safe_float(in_minus.text)
             d_val = payment_result(c.get('debt', '0'), minus_val) if minus_val > 0 else in_d.text
-            ok, message = change_balance(app, c, d_val)
+            ok, message = change_balance(app, c, d_val, op='оплата' if minus_val > 0 else 'правка долга')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('ДОЛГ', message)
@@ -2343,7 +2343,7 @@ class ClientsScreen(Screen):
             pop.is_dismissing_flag = True
             state = snapshot(app)
             app.clients.pop(pos[0])
-            ok, message = commit(app, state)
+            ok, message = commit(app, state, 'удаление исполнителя')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('ИСПОЛНИТЕЛЬ', message)
@@ -2448,7 +2448,7 @@ class ClientsScreen(Screen):
             pop.is_dismissing_flag = True
             state = snapshot(app)
             app.profit_correction = str(round(val - tot_debt + banner_deficit, 2))
-            ok, message = commit(app, state)
+            ok, message = commit(app, state, 'правка прибыли')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('ПРИБЫЛЬ', message)
@@ -2494,7 +2494,7 @@ class ClientsScreen(Screen):
                 for c in app.clients:
                     c.update({'debt': '0', 'zakupka_total': '0', 'history': []})
                 app.profit_correction = '0'
-                ok, message = commit(app, state)
+                ok, message = commit(app, state, 'общий сброс')
                 if not ok:
                     p_conf.is_dismissing_flag = False
                     self._stub_popup('СБРОС', message)
@@ -2707,7 +2707,7 @@ class ClientsScreen(Screen):
                 app.rolls.append(data)
             else:
                 app.rolls[ri] = data
-            ok, message = commit(app, state)
+            ok, message = commit(app, state, 'рулон')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('РУЛОН', message)
@@ -3636,6 +3636,7 @@ class ClientsScreen(Screen):
                     'profit': _op, 'assumed': bool(total_deducted > 0)})
             except Exception:
                 pass
+            app._op = f"заказ: {order_desc or hist_item['desc']}"
             if app.save_data() is not True:
                 raise OSError('Сохранение не подтверждено')
         except Exception as exc:
@@ -3727,7 +3728,7 @@ class ClientsScreen(Screen):
             pop.is_dismissing_flag = True
             state = snapshot(app)
             app.clients.pop(pos[0])
-            ok, message = commit(app, state)
+            ok, message = commit(app, state, 'удаление клиента')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('КЛИЕНТ', message)
@@ -3804,7 +3805,7 @@ class ClientsScreen(Screen):
             pop.is_dismissing_flag = True
             minus_val = safe_float(in_minus.text)
             d_val = payment_result(c.get('debt', '0'), minus_val) if minus_val > 0 else in_d.text
-            ok, message = change_balance(app, c, d_val)
+            ok, message = change_balance(app, c, d_val, op='оплата' if minus_val > 0 else 'правка долга')
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('ДОЛГ', message)
@@ -3870,7 +3871,7 @@ class ClientsScreen(Screen):
                 state = snapshot(app)
                 cr.setdefault('archived_history', []).extend(cr.get('history', []))
                 cr.update({'debt': '0', 'zakupka_total': '0', 'history': []})
-                ok, message = commit(app, state)
+                ok, message = commit(app, state, 'обнуление исполнителя')
                 if not ok:
                     p_conf.is_dismissing_flag = False
                     self._stub_popup('ИСПОЛНИТЕЛЬ', message)
@@ -3903,12 +3904,19 @@ class BusinessApp(App):
         sm = ScreenManager()
         sm.add_widget(MainMenu(name='main_menu'))
         sm.add_widget(ClientsScreen(name='clients_screen'))
+        notes = []
         if getattr(self, 'role_warning', None):
-            names = ', '.join(self.role_warning)
+            notes.append('Не удалось однозначно определить служебные карточки: ' +
+                         ', '.join(self.role_warning) + '. Расчёты оставлены как раньше.')
+        try:
+            notes.extend(check_integrity(self))
+        except Exception as exc:
+            notes.append('Перепроверка не выполнена: ' + str(exc))
+        self.integrity_notes = notes
+        if notes:
+            shown = notes[:6] + ([f'… и ещё {len(notes) - 6}'] if len(notes) > 6 else [])
             Clock.schedule_once(lambda dt: sm.get_screen('clients_screen')._stub_popup(
-                'ПРОВЕРЬТЕ КАРТОЧКИ',
-                'Не удалось однозначно определить служебные карточки:\n' + names +
-                '\nРасчёты оставлены как раньше. Сообщите разработчику.'), 1)
+                'ПЕРЕПРОВЕРКА', '\n'.join(shown) + '\nДанные не изменены. Сообщите разработчику.'), 1)
         return sm
 
     # Постоянные роли служебных карточек: role = remainder / white / black.
@@ -4045,6 +4053,7 @@ class BusinessApp(App):
                         self.print_cost = data.get("print_cost", "55")
                         self.profit_log = data.get("profit_log", [])
                         self.rolls = data.get("rolls", [])
+                        self.journal = data.get("journal", [])
                         self._rolls_key_present = ("rolls" in data)
                         return True
                 except Exception:
@@ -4069,6 +4078,7 @@ class BusinessApp(App):
                     self.print_cost = data.get("print_cost", "55")
                     self.profit_log = data.get("profit_log", [])
                     self.rolls = data.get("rolls", [])
+                    self.journal = data.get("journal", [])
                     self._rolls_key_present = ("rolls" in data)
                     loaded = True
             except Exception:
@@ -4087,6 +4097,10 @@ class BusinessApp(App):
                 self.load_defaults()
         self.migrate_roles()
         self.ensure_default_clients()
+        ensure_ids(self.clients)
+        if getattr(self, 'journal', None) is None:
+            self.journal = []
+        self._journal_base = journal_balances(self)
         self._migrate_rolls_if_needed()
         self.save_data()
 
@@ -4119,6 +4133,7 @@ class BusinessApp(App):
         self.profit_log = []
         self.rolls = []
         self._rolls_key_present = False
+        self.journal = []
 
     def _write_backup(self, text):
         try:
@@ -4151,7 +4166,8 @@ class BusinessApp(App):
                      "profit_correction": self.profit_correction,
                      "print_cost": getattr(self, 'print_cost', "55"),
                      "profit_log": getattr(self, 'profit_log', []),
-                     "rolls": getattr(self, 'rolls', [])})
+                     "rolls": getattr(self, 'rolls', []),
+                     "journal": getattr(self, 'journal', [])})
         return data
 
     def write_verified_backup(self):
@@ -4173,8 +4189,24 @@ class BusinessApp(App):
         return path
 
     def save_data(self):
-        data = self._current_data()
-        text = atomic_write(DATA_FILE, data)
+        """Записать базу. Каждое изменение долга и прибыли попадает в журнал (было → стало)."""
+        ensure_ids(self.clients)
+        if getattr(self, 'journal', None) is None:
+            self.journal = []
+        balances = journal_balances(self)
+        entries = journal_entries(getattr(self, '_journal_base', None), balances,
+                                  getattr(self, '_op', '') or 'изменение')
+        self._op = ''
+        self.journal.extend(entries)
+        try:
+            text = atomic_write(DATA_FILE, self._current_data())
+        except Exception:
+            if entries:
+                del self.journal[len(self.journal) - len(entries):]
+            raise
+        self._journal_base = balances
+        if len(self.journal) > JOURNAL_LIMIT:
+            del self.journal[:len(self.journal) - JOURNAL_LIMIT]
         self._write_backup(text)
         return True
 
