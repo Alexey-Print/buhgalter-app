@@ -3,6 +3,8 @@ import os
 import re
 import time
 import math
+import uuid
+from accounting import number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history
 from datetime import datetime
 from collections import defaultdict
 
@@ -39,29 +41,11 @@ DATA_FILE = os.path.join(BASE_PATH, "business_data.json")
 _AVATAR_B64 = "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"
 
 def safe_float(val, default=0.0):
-    try:
-        return float(str(val).replace(' ', '').replace('\u00a0', '').replace(',', '.'))
-    except (ValueError, TypeError):
-        return default
+    return number(val, default)
+
 
 def format_num_simple(val):
-    f = safe_float(val)
-    if f.is_integer():
-        s = str(int(f))
-        neg = s.startswith('-')
-        if neg:
-            s = s[1:]
-        s = '{:,}'.format(int(s)).replace(',', ' ')
-        return ('-' + s) if neg else s
-    else:
-        rounded = round(f, 1)
-        neg = rounded < 0
-        rounded = abs(rounded)
-        int_part = int(rounded)
-        frac = str(rounded - int_part)[2:3]  # first decimal digit
-        int_str = '{:,}'.format(int_part).replace(',', ' ')
-        result = f"{int_str}.{frac}" if frac and frac != '0' else int_str
-        return ('-' + result) if neg else result
+    return money(val)
 
 
 def _dark_input(**kw):
@@ -1924,14 +1908,11 @@ class ClientsScreen(Screen):
             def on_yes(x):
                 if getattr(p_conf, 'is_dismissing_flag', False): return
                 p_conf.is_dismissing_flag = True
-                client['history'] = []
-                try:
-                    _cn = client.get('name', '')
-                    if getattr(app, 'profit_log', None):
-                        app.profit_log = [p for p in app.profit_log if p.get('name', '') != _cn]
-                except Exception:
-                    pass
-                app.save_data()
+                ok, message = clear_history(app, client)
+                if not ok:
+                    p_conf.is_dismissing_flag = False
+                    self._stub_popup('ИСТОРИЯ', message)
+                    return
                 refresh_history_view(current_viewed_date[0])
                 p_conf.dismiss()
 
@@ -2059,79 +2040,16 @@ class ClientsScreen(Screen):
                     lbl = Label(text=desc_text, markup=True, font_size='13sp', halign='left', valign='middle')
                     lbl.bind(size=lambda s, v: setattr(s, 'text_size', (v[0], None)))
                     del_btn = RoundedButton(text="X", bg_color=(0.8, 0.2, 0.2, 1), size_hint_x=None, width=54, radius=12)
-                    del_btn.bind(on_release=lambda x, o_idx=orig_idx: delete_item_callback(o_idx, date_str))
+                    del_btn.bind(on_release=lambda x, order=item, day=date_str: delete_item_callback(order, day))
                     row.add_widget(lbl)
                     row.add_widget(del_btn)
                     list_layout.add_widget(row)
 
-        def delete_item_callback(orig_idx, date_str):
-            if not (0 <= orig_idx < len(history)):
+        def delete_item_callback(item, date_str):
+            ok, message = reverse_order(app, client, item)
+            if not ok:
+                self._stub_popup("УДАЛЕНИЕ ЗАКАЗА", message)
                 return
-            item = history[orig_idx]
-            # Запись исполнителя нельзя удалять отдельно от заказа клиента.
-            if item.get('source_oid'):
-                return
-            _linked_history = None
-            _linked_pos = None
-            if item.get('via_malevich') and safe_float(item.get('print_cost', 0)) > 0:
-                _order_oid = item.get('oid')
-                _matches = [c for c in app.clients if c.get('is_creditor') and c.get('name') == item.get('creditor_name')]
-                if len(_matches) != 1 or not _order_oid:
-                    return
-                _linked_creditor = _matches[0]
-                _linked_history = _linked_creditor.get('history', [])
-                _positions = [i for i, h in enumerate(_linked_history) if h.get('source_oid') == _order_oid]
-                if len(_positions) != 1:
-                    return
-                _linked_pos = _positions[0]
-                if abs(safe_float(_linked_history[_linked_pos].get('sum', 0)) - safe_float(item.get('print_cost', 0))) > 0.01:
-                    return
-            item = history.pop(orig_idx)
-            try:
-                _doid = item.get('oid')
-                _ddate = item.get('date')
-                _dname = client.get('name', '')
-                if getattr(app, 'profit_log', None):
-                    for _pi in range(len(app.profit_log)):
-                        _p = app.profit_log[_pi]
-                        _hit = ((_doid and _p.get('oid') == _doid) or
-                                ((not _p.get('oid') or not _doid) and _p.get('date') == _ddate and _p.get('name', '') == _dname))
-                        if _hit:
-                            app.profit_log.pop(_pi)
-                            break
-            except Exception:
-                pass
-            val = safe_float(item.get('sum', 0))
-            p_cost = safe_float(item.get('print_cost', 0.0))
-            v_malevich = item.get('via_malevich', False)
-            c_mode = item.get('mode', 'banner_white')
-            cr_name = item.get('creditor_name')
-            _old_debt = safe_float(client.get('debt', 0))
-            client['debt'] = format_num_simple(max(0.0, _old_debt - val))
-            app.profit_correction = str(round(safe_float(app.profit_correction) + p_cost, 2))
-            _uncovered = max(0.0, val - _old_debt)
-            if _uncovered > 0:
-                app.profit_correction = str(round(safe_float(app.profit_correction) - _uncovered, 2))
-            m_indices, _, b_idx, c_idx_special = app.get_special_clients()
-            if _linked_history is not None:
-                m_curr = safe_float(_linked_creditor.get('debt', 0))
-                _linked_creditor['debt'] = format_num_simple(max(0.0, m_curr - p_cost))
-                _linked_history.pop(_linked_pos)
-            target_idx = b_idx if "banner_white" in c_mode else (c_idx_special if "banner_black" in c_mode else None)
-            if target_idx is not None:
-                t = app.clients[target_idx]
-                deducted = safe_float(item.get('banner_deduction', 0.0))
-                if deducted > 0:
-                    t['debt'] = format_num_simple(safe_float(t.get('debt', 0)) + deducted)
-                    app.profit_correction = str(round(safe_float(app.profit_correction) + deducted, 2))
-            # вернуть вторую часть (списанную с другого цвета)
-            ded2 = safe_float(item.get('banner_deduction2', 0.0))
-            ded2_idx = item.get('banner_deduction2_idx')
-            if ded2 > 0 and ded2_idx is not None and ded2_idx < len(app.clients):
-                t2 = app.clients[ded2_idx]
-                t2['debt'] = format_num_simple(safe_float(t2.get('debt', 0)) + ded2)
-                app.profit_correction = str(round(safe_float(app.profit_correction) + ded2, 2))
-            app.save_data()
             self.refresh_list()
             refresh_history_view(date_str)
 
@@ -2618,40 +2536,18 @@ class ClientsScreen(Screen):
         btn_save = RoundedButton(text="ДОБАВИТЬ В СУММУ", bg_color=(0.2, 0.6, 0.4, 1), height=110, size_hint_y=None, bold=True)
 
         def save_zakupka(instance):
-            val = safe_float(in_sum.text)
-            if not val: return
-            if getattr(pop, 'is_dismissing_flag', False): return
-            pop.is_dismissing_flag = True
+            if getattr(pop, 'is_dismissing_flag', False):
+                return
             app = App.get_running_app()
             if not app:
                 return
-            target = "белый" if mode == "white" else "черный"
-            for c in app.clients:
-                if target in c.get('name', '').lower() or (target=="черный" and "чёрный" in c.get('name', '').lower()):
-                    c_debt = safe_float(c.get('debt', 0))
-                    c_zak = safe_float(c.get('zakupka_total', c_debt if c_debt > 0 else 0.0))
-                    c['debt'] = str(round(c_debt + val, 1))
-                    c['zakupka_total'] = str(round(c_zak + val, 1))
-                    # запись в историю закупок (для отчёта по периодам)
-                    if 'purchase_log' not in c:
-                        c['purchase_log'] = []
-                    c['purchase_log'].append({
-                        'date': datetime.now().strftime("%d.%m.%y %H:%M"),
-                        'sum': format_num_simple(val)
-                    })
-                    break
-            # добавить рулон в остатки, если указана длина
-            length = safe_float(in_len.text)
-            if length > 0:
-                if not hasattr(app, 'rolls') or app.rolls is None:
-                    app.rolls = []
-                app.rolls.append({
-                    'color': mode,
-                    'width': (in_w.text.strip() or '0'),
-                    'total': format_num_simple(length),
-                    'remain': format_num_simple(length)
-                })
-            app.save_data(); self.refresh_list(); pop.dismiss()
+            ok, message = purchase_banner(app, mode, in_sum.text, in_w.text, in_len.text)
+            if not ok:
+                self._stub_popup('ЗАКУПКА', message)
+                return
+            pop.is_dismissing_flag = True
+            self.refresh_list()
+            pop.dismiss()
 
         btn_save.bind(on_release=save_zakupka)
         content.add_widget(in_sum)
@@ -3286,6 +3182,20 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         if not app:
             return
+        calc_client = app.clients[idx]
+        calc_creditor = app.clients[creditor_idx] if creditor_idx is not None else None
+
+        def resolve_targets():
+            nonlocal idx, creditor_idx
+            targets = [i for i, c in enumerate(app.clients) if c is calc_client]
+            creditors = [i for i, c in enumerate(app.clients) if c is calc_creditor]
+            if len(targets) != 1 or (calc_creditor is not None and len(creditors) != 1):
+                self._stub_popup('ЗАКАЗ', 'Клиент или исполнитель удалён. Откройте расчёт заново')
+                return False
+            idx = targets[0]
+            creditor_idx = creditors[0] if creditors else None
+            return True
+
         scroll = ScrollView()
         content = BoxLayout(orientation='vertical', spacing=15, padding=20, size_hint_y=None)
         content.bind(minimum_height=content.setter('height'))
@@ -3383,74 +3293,33 @@ class ClientsScreen(Screen):
             Clock.schedule_once(lambda dt: (setattr(btn, 'text', old_t), setattr(btn, 'bg_color', old_c)), 1.2)
 
         def on_undo_clicked(instance):
-            if not self.raw_history_lines: return
+            if not self.raw_history_lines:
+                return
             last = self.raw_history_lines[-1]
-            _undo_oid = last.get('oid')
-            _undo_client_idx = last.get('client_idx', idx)
-            if not _undo_oid or not (0 <= _undo_client_idx < len(app.clients)):
+            matches = [(c, h) for c in app.clients for h in c.get('history', [])
+                       if last.get('oid') and h.get('oid') == last['oid']]
+            if len(matches) != 1:
                 flash_btn(instance, ok=False, msg="ЗАКАЗ НЕ НАЙДЕН")
                 return
-            _undo_hist = app.clients[_undo_client_idx].get('history', [])
-            _undo_matches = [j for j, h in enumerate(_undo_hist) if h.get('oid') == _undo_oid]
-            if len(_undo_matches) != 1:
-                flash_btn(instance, ok=False, msg="ЗАКАЗ НЕ НАЙДЕН")
+            ok, message = reverse_order(app, *matches[0])
+            if not ok:
+                self._stub_popup("ОТМЕНА ШАГА", message)
                 return
-            _undo_linked_hist = None
-            _undo_linked_pos = None
-            if last.get('via_malevich') and safe_float(last.get('print_cost', 0)) > 0:
-                _undo_creditors = [c for c in app.clients if c.get('is_creditor') and c.get('name') == last.get('creditor_name')]
-                if len(_undo_creditors) != 1:
-                    flash_btn(instance, ok=False, msg="ИСПОЛНИТЕЛЬ НЕ НАЙДЕН")
-                    return
-                _undo_linked_creditor = _undo_creditors[0]
-                _undo_linked_hist = _undo_linked_creditor.get('history', [])
-                _undo_linked_matches = [j for j, h in enumerate(_undo_linked_hist) if h.get('source_oid') == _undo_oid]
-                if len(_undo_linked_matches) != 1:
-                    flash_btn(instance, ok=False, msg="СВЯЗЬ НЕ НАЙДЕНА")
-                    return
-                _undo_linked_pos = _undo_linked_matches[0]
-                if abs(safe_float(_undo_linked_hist[_undo_linked_pos].get('sum', 0)) - safe_float(last.get('print_cost', 0))) > 0.01:
-                    flash_btn(instance, ok=False, msg="СУММА НЕ СОВПАЛА")
-                    return
             self.raw_history_lines.pop()
-            val = safe_float(last['sum'])
-            self.order_total_accumulator -= val
+            self.order_total_accumulator = round(self.order_total_accumulator - safe_float(last['sum']), 2)
             btn_total_order.text = f"СУММА ЗАКАЗА:\n{format_num_simple(self.order_total_accumulator)} руб"
-            if history_layout.children: history_layout.remove_widget(history_layout.children[0])
+            if history_layout.children:
+                history_layout.remove_widget(history_layout.children[0])
             if not self.raw_history_lines and empty_placeholder.parent is None:
                 history_layout.add_widget(empty_placeholder)
-            p_cost = last.get('print_cost', 0.0)
-            v_malevich = last.get('via_malevich', False)
-            c_mode = last.get('mode', 'banner_white')
-            c_idx_target = last.get('client_idx', idx)
-            cr_name_target = last.get('creditor_name')
-            app.clients[c_idx_target]['debt'] = format_num_simple(max(0.0, safe_float(app.clients[c_idx_target].get('debt', 0)) - val))
-            _undo_hist.pop(_undo_matches[0])
-            if getattr(app, 'profit_log', None):
-                app.profit_log[:] = [p for p in app.profit_log if p.get('oid') != _undo_oid]
-            app.profit_correction = str(round(safe_float(app.profit_correction) + p_cost, 2))
-            m_indices, _, b_idx, black_idx = app.get_special_clients()
-            if _undo_linked_hist is not None:
-                _undo_linked_creditor['debt'] = format_num_simple(max(0.0, safe_float(_undo_linked_creditor.get('debt', 0)) - p_cost))
-                _undo_linked_hist.pop(_undo_linked_pos)
-            t_idx = b_idx if "banner_white" in c_mode else (black_idx if "banner_black" in c_mode else None)
-            if t_idx is not None:
-                deducted = safe_float(last.get('banner_deduction', 0.0))
-                if deducted > 0:
-                    app.clients[t_idx]['debt'] = format_num_simple(safe_float(app.clients[t_idx].get('debt', 0)) + deducted)
-                    app.profit_correction = str(round(safe_float(app.profit_correction) + deducted, 2))
-            # вернуть вторую часть (списанную с другого цвета)
-            ded2 = safe_float(last.get('banner_deduction2', 0.0))
-            ded2_idx = last.get('banner_deduction2_idx')
-            if ded2 > 0 and ded2_idx is not None and ded2_idx < len(app.clients):
-                app.clients[ded2_idx]['debt'] = format_num_simple(safe_float(app.clients[ded2_idx].get('debt', 0)) + ded2)
-                app.profit_correction = str(round(safe_float(app.profit_correction) + ded2, 2))
-            app.save_data(); self.refresh_list()
+            self.refresh_list()
             flash_btn(instance, ok=True, msg="ОТМЕНЕНО")
 
         btn_undo.bind(on_release=on_undo_clicked)
 
         def on_add_to_debt_clicked(instance):
+            if not resolve_targets():
+                return
             now_ts = time.time()
             if now_ts - last_add_click_ts[0] < 0.6:
                 return
@@ -3578,6 +3447,8 @@ class ClientsScreen(Screen):
             dop_pop.content.add_widget(in_dop)
 
             def save_dop(x):
+                if not resolve_targets():
+                    return
                 val = safe_float(in_dop.text)
                 if val <= 0:
                     return
@@ -3619,13 +3490,17 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         if not app:
             return False
+        state = snapshot(app)
         try:
+            ensure_ids(app.clients)
             val = safe_float(res_t.replace(' руб', ''))
-            if val <= 0: return False
+            if val <= 0 or not math.isfinite(print_cost) or print_cost < 0: return False
+            if via_malevich and (creditor_idx is None or not app.clients[creditor_idx].get('is_creditor') or idx == creditor_idx):
+                return False
             c = app.clients[idx]
             if 'history' not in c: c['history'] = []
             total_deducted = 0.0
-            _oid = repr(time.time())
+            _oid = uuid.uuid4().hex
             hist_item = {
                 'oid': _oid,
                 'date': datetime.now().strftime("%d.%m.%y %H:%M"),
@@ -3640,6 +3515,7 @@ class ClientsScreen(Screen):
             if badge is not None: hist_item['badge'] = badge
             if via_malevich and creditor_idx is not None:
                 hist_item['creditor_name'] = app.clients[creditor_idx].get('name')
+                hist_item['creditor_id'] = app.clients[creditor_idx]['cid']
             c['history'].append(hist_item)
             c['debt'] = format_num_simple(safe_float(c.get('debt', 0)) + val)
             app.profit_correction = str(round(safe_float(app.profit_correction) - print_cost, 2))
@@ -3678,6 +3554,7 @@ class ClientsScreen(Screen):
                         remaining -= d1
                         total_deducted += d1
                         hist_item['banner_deduction'] = d1
+                        hist_item['banner_deduction_id'] = app.clients[primary_idx]['cid']
                 # 2) остаток гасит другой цвет
                 if secondary_idx is not None and remaining > 0:
                     sdebt = safe_float(app.clients[secondary_idx].get('debt', 0))
@@ -3688,21 +3565,27 @@ class ClientsScreen(Screen):
                         total_deducted += d2
                         hist_item['banner_deduction2'] = d2
                         hist_item['banner_deduction2_idx'] = secondary_idx
+                        hist_item['banner_deduction2_id'] = app.clients[secondary_idx]['cid']
                 if total_deducted > 0:
                     app.profit_correction = str(round(safe_float(app.profit_correction) - total_deducted, 2))
             try:
-                _op = round(val - safe_float(print_cost), 1)
+                _op = round(val - safe_float(print_cost), 2)
                 if not hasattr(app, 'profit_log') or app.profit_log is None:
                     app.profit_log = []
-                app.profit_log.append({'oid': _oid, 'date': hist_item['date'], 'name': c.get('name', ''),
+                if not c.get('is_creditor'):
+                    app.profit_log.append({'oid': _oid, 'date': hist_item['date'], 'name': c.get('name', ''),
                     'desc': (order_desc or '').strip() or hist_item['desc'],
                     'profit': _op, 'assumed': bool(total_deducted > 0)})
             except Exception:
                 pass
-            app.save_data(); self.refresh_list()
-            return True
-        except Exception:
+            if app.save_data() is not True:
+                raise OSError('Сохранение не подтверждено')
+        except Exception as exc:
+            restore(app, state)
+            self._stub_popup('СОХРАНЕНИЕ ЗАКАЗА', 'Заказ не сохранён: ' + str(exc))
             return False
+        self.refresh_list()
+        return True
 
 
     def show_edit_popup(self, idx):
@@ -4036,6 +3919,9 @@ class BusinessApp(App):
                     with open(path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                     if data.get("clients"):
+                        if not isinstance(data, dict) or not isinstance(data.get("clients"), list):
+                            raise ValueError("Неверный формат данных")
+                        self._extra_data = dict(data)
                         self.clients = data.get("clients", [])
                         self.prices = data.get("prices", ["160", "200", "220", "250"])
                         self.plenka_prices = data.get("plenka_prices", ["250", "300", "350", "400"])
@@ -4057,6 +3943,9 @@ class BusinessApp(App):
             try:
                 with open(DATA_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                    if not isinstance(data, dict) or not isinstance(data.get("clients"), list):
+                        raise ValueError("Неверный формат данных")
+                    self._extra_data = dict(data)
                     self.clients = data.get("clients", [])
                     self.prices = data.get("prices", ["160", "200", "220", "250"])
                     self.plenka_prices = data.get("plenka_prices", ["250", "300", "350", "400"])
@@ -4068,10 +3957,17 @@ class BusinessApp(App):
                     loaded = True
             except Exception:
                 loaded = False
+        if not loaded and os.path.exists(DATA_FILE):
+            import shutil
+            damaged = DATA_FILE + '.damaged'
+            if not os.path.exists(damaged):
+                shutil.copy2(DATA_FILE, damaged)
         if not loaded:
             # основной файл отсутствует или повреждён — пробуем свежую резервную копию,
             # и только если её нет — грузим пустую заготовку
             if not self._restore_from_backup():
+                if os.path.exists(DATA_FILE) or os.path.isdir(os.path.join(BASE_PATH, "backups")):
+                    raise RuntimeError("Данные повреждены. Исходные файлы сохранены; требуется восстановление")
                 self.load_defaults()
         self.ensure_default_clients()
         self._migrate_rolls_if_needed()
@@ -4131,28 +4027,17 @@ class BusinessApp(App):
             pass
 
     def save_data(self):
-        # Основная запись — простая и прямая, как в рабочей версии (работает на Pydroid всегда)
-        try:
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump({"clients": self.clients, "prices": self.prices,
-                           "plenka_prices": self.plenka_prices,
-                           "profit_correction": self.profit_correction,
-                           "print_cost": getattr(self, 'print_cost', "55"), "profit_log": getattr(self, 'profit_log', []),
-                           "rolls": getattr(self, 'rolls', [])},
-                          f, ensure_ascii=False, indent=4)
-        except Exception:
-            return
-        # Резервная копия — отдельно; если не выйдет, на сохранение это не влияет
-        try:
-            text = json.dumps({"clients": self.clients, "prices": self.prices,
-                               "plenka_prices": self.plenka_prices,
-                               "profit_correction": self.profit_correction,
-                               "print_cost": getattr(self, 'print_cost', "55"), "profit_log": getattr(self, 'profit_log', []),
-                               "rolls": getattr(self, 'rolls', [])},
-                              ensure_ascii=False, indent=4)
-            self._write_backup(text)
-        except Exception:
-            pass
+        ensure_ids(self.clients)
+        data = dict(getattr(self, '_extra_data', {}))
+        data.update({"clients": self.clients, "prices": self.prices,
+                     "plenka_prices": self.plenka_prices,
+                     "profit_correction": self.profit_correction,
+                     "print_cost": getattr(self, 'print_cost', "55"),
+                     "profit_log": getattr(self, 'profit_log', []),
+                     "rolls": getattr(self, 'rolls', [])})
+        text = atomic_write(DATA_FILE, data)
+        self._write_backup(text)
+        return True
 
 
 if __name__ == '__main__':

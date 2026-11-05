@@ -6,8 +6,10 @@ package.domain = com.aleksey
 
 source.dir = .
 source.include_exts = py,png,jpg,jpeg,json
+source.exclude_dirs = tests,backups,.git
+source.exclude_patterns = business_data.json*,run_checks.py
 
-version = 1.0
+version = 1.1
 
 requirements = python3,kivy
 

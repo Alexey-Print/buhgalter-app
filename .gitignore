@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.buildozer/
+bin/
+business_data.json
+business_data.json.*
+backups/
+*.keystore
