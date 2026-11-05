@@ -103,7 +103,7 @@ def reverse_order(app, client, item):
     oid = item.get('oid')
     if oid and sum(h.get('oid') == oid for c in app.clients for h in c.get('history', [])) != 1:
         return False, 'Повторный номер заказа: требуется проверка данных'
-    cost = number(item.get('print_cost'))
+    cost = number(money(item.get('print_cost', 0)))
     val = number(item.get('sum'))
     linked = None
     if item.get('via_malevich') and cost > 0:

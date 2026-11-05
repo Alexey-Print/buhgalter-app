@@ -26,7 +26,7 @@ android.archs = arm64-v8a
 android.allow_backup = 1
 android.api = 33
 android.minapi = 24
-android.ndk = 25b
+android.ndk = 28c
 android.accept_sdk_license = True
 
 p4a.branch = develop

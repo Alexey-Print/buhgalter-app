@@ -61,6 +61,25 @@ class AccountingTests(unittest.TestCase):
         self.assertEqual(self.app.get_totals(), before)
         self.assertEqual(self.app.profit_log, [])
 
+    def test_fractional_kopeck_printing_reverses_exactly(self):
+        for cost, payable in ((0.005, 0.01), (1.005, 1.01), (4.995, 5),
+                              (121.555, 121.56), (201.225, 201.23)):
+            with self.subTest(cost=cost):
+                before = self.app.get_totals()
+                item = self.add(cost=cost)
+                self.assertEqual(item['print_cost'], payable)
+                self.assertEqual(main.safe_float(self.oleg['history'][-1]['sum']), payable)
+                self.assertTrue(reverse_order(self.app, self.nastya, item)[0])
+                self.assertEqual(self.app.get_totals(), before)
+                self.assertEqual(self.oleg['debt'], '1 000')
+
+    def test_existing_fractional_cost_matches_payable_contractor_charge(self):
+        item = self.add(cost=5)
+        item['print_cost'] = 4.995
+        self.assertTrue(reverse_order(self.app, self.nastya, item)[0])
+        self.assertEqual(self.oleg['debt'], '1 000')
+        self.assertEqual(self.nastya['debt'], '0')
+
     def test_duplicate_amount_date_and_rename_reorder(self):
         first = self.add(); second = self.add()
         first['date'] = second['date']

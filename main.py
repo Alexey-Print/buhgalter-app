@@ -3486,6 +3486,8 @@ class ClientsScreen(Screen):
             ensure_ids(app.clients)
             val = safe_float(res_t.replace(' руб', ''))
             if val <= 0 or not math.isfinite(print_cost) or print_cost < 0: return False
+            # One payable amount must be used for the order, contractor and profit.
+            print_cost = safe_float(money(print_cost))
             if via_malevich and (creditor_idx is None or not app.clients[creditor_idx].get('is_creditor') or idx == creditor_idx):
                 return False
             c = app.clients[idx]
