@@ -28,15 +28,25 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build APK in Docker
         run: |
+          set +e
           docker run --rm \
             --entrypoint bash \
             -v "$PWD":/home/user/hostcwd \
             kivy/buildozer:latest \
-            -c "cd /home/user/hostcwd && yes | buildozer android debug"
+            -c "cd /home/user/hostcwd && yes | buildozer android debug" > build-android.log 2>&1
+          build_status=$?
+          tail -n 160 build-android.log
+          exit "$build_status"
+      - name: Save Android build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-log
+          path: build-android.log
       - name: Record source and APK checksums
         run: |
           git rev-parse HEAD > bin/SOURCE_COMMIT.txt
-          sha256sum main.py accounting.py buildozer.spec bin/*.apk > bin/SHA256SUMS.txt
+          sha256sum main.py accounting.py buildozer.spec android_src/com/aleksey/uchet/UchetActivity.java bin/*.apk > bin/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: uchet-audit-apk
