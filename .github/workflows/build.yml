@@ -72,12 +72,24 @@ jobs:
           test "$ACTUAL" = "$(cat "$KS_DIR/fingerprint.txt")" || { echo "::error::Ключ не совпадает с закреплённым отпечатком"; exit 1; }
           echo "Отпечаток ключа: $ACTUAL"
 
+      # Хранение скачанных инструментов Android и собранного Python между сборками (ускоряет в 2–3 раза).
+      - name: Restore build tools cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/buildozer-home
+            .buildozer
+          # Меняется только при смене инструментов (Kivy, библиотек, p4a, NDK), не при каждой версии.
+          key: buildozer-kivy2.3.1-as4k0.1.1-p4a1c9a4b-ndk28c-api33-v1
+
       - name: Build signed release APK in Docker
         run: |
           set +e
+          mkdir -p "$RUNNER_TEMP/buildozer-home"
           docker run --rm \
             --entrypoint bash \
             -v "$PWD":/home/user/hostcwd \
+            -v "$RUNNER_TEMP/buildozer-home":/home/user/.buildozer \
             -v "$RUNNER_TEMP/ks":/ks:ro \
             -e P4A_RELEASE_KEYSTORE=/ks/uchet.keystore \
             -e P4A_RELEASE_KEYALIAS=uchet \
@@ -111,7 +123,10 @@ jobs:
 
       - name: Remove key from runner
         if: always()
-        run: rm -rf "$RUNNER_TEMP/ks"
+        run: |
+          rm -rf "$RUNNER_TEMP/ks"
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/buildozer-home" .buildozer 2>/dev/null || true
+          rm -rf .buildozer/android/platform/build-*/dists/*/bin 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         with:
