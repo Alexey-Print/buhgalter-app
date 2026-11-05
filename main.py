@@ -2506,7 +2506,7 @@ class ClientsScreen(Screen):
 
         # ── Разделитель ──
         content.add_widget(Widget(size_hint_y=None, height=15))
-        sep_lbl = Label(text="[color=#555555]─────── СБРОС ───────[/color]", markup=True,
+        sep_lbl = Label(text="[color=#777777]— — —  СБРОС  — — —[/color]", markup=True,
                         font_size='14sp', halign='center', size_hint_y=None, height=25)
         sep_lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
         content.add_widget(sep_lbl)
@@ -2557,9 +2557,9 @@ class ClientsScreen(Screen):
 
         btn_global_reset.bind(on_release=confirm_global_reset)
         transfer_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=90)
-        btn_export = RoundedButton(text="ЭКСПОРТ БАЗЫ", bg_color=(0.15, 0.45, 0.7, 1), bold=True, font_size='18sp')
+        btn_export = RoundedButton(text="ЭКСПОРТ", bg_color=(0.15, 0.45, 0.7, 1), bold=True, font_size='20sp')
         btn_export.bind(on_release=lambda x: self.export_database())
-        btn_import = RoundedButton(text="ИМПОРТ БАЗЫ", bg_color=(0.35, 0.3, 0.6, 1), bold=True, font_size='18sp')
+        btn_import = RoundedButton(text="ИМПОРТ", bg_color=(0.35, 0.3, 0.6, 1), bold=True, font_size='20sp')
         btn_import.bind(on_release=lambda x: self.start_import())
         transfer_row.add_widget(btn_export)
         transfer_row.add_widget(btn_import)
