@@ -21,6 +21,19 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.textinput import TextInput
+
+
+# Клавиатура Samsung даёт запятую вместо точки: в числовых полях запятая = точка.
+_orig_insert_text = TextInput.insert_text
+
+
+def _insert_text_decimal(self, substring, from_undo=False):
+    if self.input_filter == 'float' and not from_undo:
+        substring = substring.replace(',', '.')
+    return _orig_insert_text(self, substring, from_undo=from_undo)
+
+
+TextInput.insert_text = _insert_text_decimal
 from kivy.uix.popup import Popup
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget

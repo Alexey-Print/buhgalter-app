@@ -92,3 +92,19 @@ class CalculatorTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DecimalCommaTests(unittest.TestCase):
+    def typed(self, text, **kw):
+        field = TextInput(**kw)
+        Clock.tick()
+        for ch in text:
+            field.insert_text(ch)
+        Clock.tick()
+        return field.text
+
+    def test_comma_becomes_point_in_number_fields(self):
+        self.assertEqual(self.typed('2,45', input_filter='float'), '2.45')
+        self.assertEqual(self.typed('13.05', input_filter='float'), '13.05')
+        self.assertEqual(main.safe_float(self.typed('1,5,5', input_filter='float')), 1.55)  # одна точка
+        self.assertEqual(self.typed('Иванов, ООО'), 'Иванов, ООО')  # в обычных полях запятая остаётся
