@@ -3803,42 +3803,94 @@ class BusinessApp(App):
         sm = ScreenManager()
         sm.add_widget(MainMenu(name='main_menu'))
         sm.add_widget(ClientsScreen(name='clients_screen'))
+        if getattr(self, 'role_warning', None):
+            names = ', '.join(self.role_warning)
+            Clock.schedule_once(lambda dt: sm.get_screen('clients_screen')._stub_popup(
+                'ПРОВЕРЬТЕ КАРТОЧКИ',
+                'Не удалось однозначно определить служебные карточки:\n' + names +
+                '\nРасчёты оставлены как раньше. Сообщите разработчику.'), 1)
         return sm
 
-    def get_special_clients(self):
-        m_indices = []
-        o_idx = b_idx = c_idx = None
-        for i, c in enumerate(self.clients):
-            n = c.get('name', '').lower().strip()
-            if c.get('is_creditor') or n == "малевич":
+    # Постоянные роли служебных карточек: role = remainder / white / black.
+    # Исполнитель определяется флагом is_creditor. Имя роль не определяет.
+    SPECIAL_ROLES = ('remainder', 'white', 'black')
+    DEFAULT_ROLE_NAMES = {'remainder': ('баннер остаток', 'олег', 'олега'),
+                          'white': ('белый банер', 'белый баннер'),
+                          'black': ('черный банер', 'чёрный банер', 'черный баннер', 'чёрный баннер')}
+
+    @staticmethod
+    def _legacy_role(c):
+        """Как старая версия определяла роль по имени — только для однократной миграции."""
+        n = c.get('name', '').lower().strip()
+        if c.get('is_creditor') or n == "малевич":
+            return 'creditor'
+        if n in ("олега", "олег", "баннер остаток"):
+            return 'remainder'
+        if "белый" in n and "олег" not in n:
+            return 'white'
+        if ("черный" in n or "чёрный" in n) and "олег" not in n:
+            return 'black'
+        return None
+
+    def migrate_roles(self):
+        """Однократно закрепить роли за подтверждёнными служебными карточками.
+        Неоднозначные случаи не угадываются: роль не назначается, список — в role_warning."""
+        self.role_warning = []
+        extra = getattr(self, '_extra_data', None)
+        if extra is None:
+            extra = self._extra_data = {}
+        if extra.get('roles_version') == 1:
+            return
+        for c in self.clients:
+            if c.get('name', '').lower().strip() == "малевич" and not c.get('role'):
                 c['is_creditor'] = True
-                m_indices.append(i)
-            elif n in ("олега", "олег", "баннер остаток") and not c.get('is_creditor'):
-                o_idx = i
-            elif "белый" in n and "олег" not in n: b_idx = i
-            elif ("черный" in n or "чёрный" in n) and "олег" not in n: c_idx = i
-        return m_indices, o_idx, b_idx, c_idx
+        for role in self.SPECIAL_ROLES:
+            if any(c.get('role') == role for c in self.clients):
+                continue
+            found = [c for c in self.clients if not c.get('role') and not c.get('is_creditor')
+                     and self._legacy_role(c) == role]
+            if len(found) > 1:
+                exact = [c for c in found if c.get('name', '').lower().strip() in self.DEFAULT_ROLE_NAMES[role]]
+                if len(exact) == 1:
+                    found = exact
+            if len(found) == 1:
+                found[0]['role'] = role
+            elif found:
+                self.role_warning.extend(c.get('name', '') for c in found)
+        extra['roles_version'] = 1
+
+    def get_special_clients(self):
+        m_indices = [i for i, c in enumerate(self.clients) if c.get('is_creditor')]
+        found = {}
+        for role in self.SPECIAL_ROLES:
+            idx = next((i for i, c in enumerate(self.clients)
+                        if c.get('role') == role and not c.get('is_creditor')), None)
+            if idx is None:
+                # Только для неоднозначной старой базы: прежнее поведение, чтобы итоги не изменились.
+                for i, c in enumerate(self.clients):
+                    if not c.get('role') and not c.get('is_creditor') and self._legacy_role(c) == role:
+                        idx = i
+            found[role] = idx
+        return m_indices, found['remainder'], found['white'], found['black']
 
     def ensure_default_clients(self):
-        names = [c.get('name', '').upper() for c in self.clients]
-        has_ost = any(n in ("ОЛЕГ", "ОЛЕГА", "БАННЕР ОСТАТОК") for n in names)
-        if not has_ost:
-            self.clients.insert(0, {'name': 'БАННЕР ОСТАТОК', 'debt': '0', 'm_total': '75', 'm_remain': '75'})
-        has_creditor = any(c.get('is_creditor') for c in self.clients)
-        if not has_creditor:
+        m_indices, o_idx, b_idx, c_idx = self.get_special_clients()
+        if o_idx is None:
+            self.clients.insert(0, {'name': 'БАННЕР ОСТАТОК', 'debt': '0', 'm_total': '75', 'm_remain': '75',
+                                    'role': 'remainder'})
+        if not any(c.get('is_creditor') for c in self.clients):
             m_exists = False
             for c in self.clients:
-                if c.get('name', '').upper() == 'МАЛЕВИЧ':
+                if c.get('name', '').upper() == 'МАЛЕВИЧ' and not c.get('role'):
                     c['is_creditor'] = True
                     m_exists = True
                     break
             if not m_exists:
                 self.clients.insert(1, {'name': 'МАЛЕВИЧ', 'debt': '0', 'is_creditor': True})
-        names = [c.get('name', '').upper() for c in self.clients]
-        if not any("БЕЛЫЙ" in n and "ОЛЕГ" not in n for n in names):
-            self.clients.append({'name': 'БЕЛЫЙ БАНЕР', 'debt': '0'})
-        if not any(("ЧЕРНЫЙ" in n or "ЧЁРНЫЙ" in n) and "ОЛЕГ" not in n for n in names):
-            self.clients.append({'name': 'ЧЕРНЫЙ БАНЕР', 'debt': '0'})
+        if b_idx is None:
+            self.clients.append({'name': 'БЕЛЫЙ БАНЕР', 'debt': '0', 'role': 'white'})
+        if c_idx is None:
+            self.clients.append({'name': 'ЧЕРНЫЙ БАНЕР', 'debt': '0', 'role': 'black'})
 
     def get_totals(self):
         m_indices, o_idx, b_idx, c_idx = self.get_special_clients()
@@ -3933,6 +3985,7 @@ class BusinessApp(App):
                 if os.path.exists(DATA_FILE) or os.path.isdir(os.path.join(BASE_PATH, "backups")):
                     raise RuntimeError("Данные повреждены. Исходные файлы сохранены; требуется восстановление")
                 self.load_defaults()
+        self.migrate_roles()
         self.ensure_default_clients()
         self._migrate_rolls_if_needed()
         self.save_data()
