@@ -80,7 +80,7 @@ jobs:
             ${{ runner.temp }}/buildozer-home
             .buildozer
           # Меняется только при смене инструментов (Kivy, библиотек, p4a, NDK), не при каждой версии.
-          key: buildozer-kivy2.3.1-as4k0.1.1-p4a1c9a4b-ndk28c-api33-v1
+          key: buildozer-kivy2.3.1-as4k0.1.1-p4a1c9a4b-ndk28c-api33-root-v2
 
       - name: Build signed release APK in Docker
         run: |
