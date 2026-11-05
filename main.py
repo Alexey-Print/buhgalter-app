@@ -2084,6 +2084,8 @@ class ClientsScreen(Screen):
                 if len(_positions) != 1:
                     return
                 _linked_pos = _positions[0]
+                if abs(safe_float(_linked_history[_linked_pos].get('sum', 0)) - safe_float(item.get('print_cost', 0))) > 0.01:
+                    return
             item = history.pop(orig_idx)
             try:
                 _doid = item.get('oid')
@@ -3407,6 +3409,9 @@ class ClientsScreen(Screen):
                     flash_btn(instance, ok=False, msg="СВЯЗЬ НЕ НАЙДЕНА")
                     return
                 _undo_linked_pos = _undo_linked_matches[0]
+                if abs(safe_float(_undo_linked_hist[_undo_linked_pos].get('sum', 0)) - safe_float(last.get('print_cost', 0))) > 0.01:
+                    flash_btn(instance, ok=False, msg="СУММА НЕ СОВПАЛА")
+                    return
             self.raw_history_lines.pop()
             val = safe_float(last['sum'])
             self.order_total_accumulator -= val
@@ -3421,6 +3426,8 @@ class ClientsScreen(Screen):
             cr_name_target = last.get('creditor_name')
             app.clients[c_idx_target]['debt'] = format_num_simple(max(0.0, safe_float(app.clients[c_idx_target].get('debt', 0)) - val))
             _undo_hist.pop(_undo_matches[0])
+            if getattr(app, 'profit_log', None):
+                app.profit_log[:] = [p for p in app.profit_log if p.get('oid') != _undo_oid]
             app.profit_correction = str(round(safe_float(app.profit_correction) + p_cost, 2))
             m_indices, _, b_idx, black_idx = app.get_special_clients()
             if _undo_linked_hist is not None:
