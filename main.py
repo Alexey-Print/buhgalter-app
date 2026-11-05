@@ -6,6 +6,7 @@ import math
 import uuid
 from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
 from datetime import datetime
+import transfer
 from collections import defaultdict
 
 from kivy.config import Config
@@ -2512,6 +2513,15 @@ class ClientsScreen(Screen):
             p_conf.open()
 
         btn_global_reset.bind(on_release=confirm_global_reset)
+        transfer_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=90)
+        btn_export = RoundedButton(text="ЭКСПОРТ БАЗЫ", bg_color=(0.15, 0.45, 0.7, 1), bold=True, font_size='18sp')
+        btn_export.bind(on_release=lambda x: self.export_database())
+        btn_import = RoundedButton(text="ИМПОРТ БАЗЫ", bg_color=(0.35, 0.3, 0.6, 1), bold=True, font_size='18sp')
+        btn_import.bind(on_release=lambda x: self.start_import())
+        transfer_row.add_widget(btn_export)
+        transfer_row.add_widget(btn_import)
+        content.add_widget(transfer_row)
+        content.add_widget(Widget(size_hint_y=None, height=12))
         content.add_widget(btn_global_reset)
 
         content.add_widget(Widget(size_hint_y=None, height=25))
@@ -2529,6 +2539,73 @@ class ClientsScreen(Screen):
         content.add_widget(bottom_profit)
         content.add_widget(Widget(size_hint_y=None, height=350))
         scroll.add_widget(content); pop.open()
+
+    # ── Экспорт / импорт всей базы ──
+    def export_database(self):
+        app = App.get_running_app()
+        try:
+            where = transfer.export_database(app, BASE_PATH)
+        except Exception as exc:
+            self._stub_popup('ЭКСПОРТ', 'Копия не сохранена: ' + str(exc))
+            return
+        self._stub_popup('ЭКСПОРТ', 'Копия базы сохранена:\n' + str(where))
+
+    def start_import(self):
+        if transfer.ON_ANDROID:
+            try:
+                self._import_chooser = transfer.choose_import_file(self.confirm_import)
+            except Exception as exc:
+                self._stub_popup('ИМПОРТ', 'Не удалось открыть выбор файла: ' + str(exc))
+            return
+        folder = os.path.join(BASE_PATH, 'import')
+        files = sorted(os.path.join(folder, x) for x in os.listdir(folder)) if os.path.isdir(folder) else []
+        files = [f for f in files if f.endswith('.json')]
+        if not files:
+            self._stub_popup('ИМПОРТ', 'Положите файл базы (.json) в папку import рядом с программой')
+            return
+        self.confirm_import(files[-1])
+
+    def confirm_import(self, path):
+        app = App.get_running_app()
+        try:
+            data = transfer.read_import(path)
+            new_totals = transfer.summarize(BusinessApp, data)
+        except Exception as exc:
+            self._stub_popup('ИМПОРТ', str(exc))
+            return
+        content = BoxLayout(orientation='vertical', spacing=14, padding=18)
+        pop = AppPopup(title='ЗАМЕНИТЬ БАЗУ?', content=content, size_hint=(0.92, 0.75))
+        text = ('[b]СЕЙЧАС[/b]\n' + transfer.describe_totals(app.get_totals()) +
+                '\n\n[b]ИЗ ФАЙЛА[/b] (' + str(len(data['clients'])) + ' карточек)\n' +
+                transfer.describe_totals(new_totals) +
+                '\n\nТекущая база сначала будет сохранена в резервную копию.')
+        lbl = Label(text=text, markup=True, halign='center', valign='middle', font_size='16sp')
+        lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
+        content.add_widget(lbl)
+        row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=90)
+        btn_yes = RoundedButton(text='ЗАМЕНИТЬ', bg_color=(0.2, 0.6, 0.4, 1), bold=True, font_size='19sp')
+        btn_no = CancelButton(text='ОТМЕНА', bg_color=(0.6, 0.2, 0.2, 1), bold=True, font_size='19sp')
+
+        def do_import(x):
+            if getattr(pop, 'is_dismissing_flag', False):
+                return
+            pop.is_dismissing_flag = True
+            try:
+                backup = transfer.apply_import(app, data, DATA_FILE)
+            except Exception as exc:
+                pop.is_dismissing_flag = False
+                self._stub_popup('ИМПОРТ', 'База не заменена, прежняя на месте: ' + str(exc))
+                return
+            pop.dismiss()
+            self.refresh_list()
+            self._stub_popup('ИМПОРТ', 'База загружена.\nКопия прежней:\n' + os.path.basename(backup))
+
+        btn_yes.bind(on_release=do_import)
+        btn_no.bind(on_release=lambda x: pop.dismiss())
+        row.add_widget(btn_yes)
+        row.add_widget(btn_no)
+        content.add_widget(row)
+        pop.open()
 
     def show_zakupka_menu(self, instance):
         content = BoxLayout(orientation='vertical', spacing=20, padding=20)
