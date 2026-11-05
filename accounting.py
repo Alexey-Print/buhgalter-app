@@ -168,6 +168,51 @@ def reverse_order(app, client, item):
     return True, 'Заказ удалён'
 
 
+def _dec(value):
+    return Decimal(money(value).replace(' ', ''))
+
+
+def is_ordinary_client(app, client):
+    """Обычный клиент: не исполнитель, не баннерный материал и не остаток баннера."""
+    creditors, remainder, white, black = app.get_special_clients()
+    idx = next((i for i, c in enumerate(app.clients) if c is client), None)
+    return idx is not None and idx not in creditors and idx not in (remainder, white, black)
+
+
+def payment_result(old_value, paid):
+    """«Отдал» гасит долг в сторону нуля; положительный долг может уйти в переплату."""
+    old, paid = _dec(old_value), _dec(paid)
+    if old >= 0:
+        return old - paid
+    return min(Decimal('0'), old + paid)
+
+
+def change_balance(app, client, new_value, name=None):
+    """Изменить долг (и имя) одной транзакцией. Прибыль меняется только при росте
+    положительной части долга; оплата, переплата и её возврат прибыль не меняют."""
+    if not any(c is client for c in app.clients):
+        return False, 'Клиент больше не существует'
+    state = snapshot(app)
+    try:
+        old, new = _dec(client.get('debt')), _dec(new_value)
+        zero = Decimal('0')
+        if is_ordinary_client(app, client):
+            delta = (old - new) + max(zero, max(zero, new) - max(zero, old))
+            if delta:
+                app.profit_correction = money(_dec(app.profit_correction) + delta)
+        if name is not None:
+            client['name'] = name
+        client['debt'] = money(new)
+        if new == 0:
+            client['zakupka_total'] = '0'
+        if app.save_data() is not True:
+            raise OSError('Сохранение не подтверждено')
+    except Exception as exc:
+        restore(app, state)
+        return False, 'Не сохранено, повторите: ' + str(exc)
+    return True, 'Сохранено'
+
+
 def purchase_banner(app, color, amount, width='', length=0):
     amount = number(amount)
     length = number(length)

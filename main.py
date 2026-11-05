@@ -4,7 +4,7 @@ import re
 import time
 import math
 import uuid
-from accounting import number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage
+from accounting import number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
 from datetime import datetime
 from collections import defaultdict
 
@@ -919,6 +919,9 @@ class MainMenu(Screen):
         pop._rebuild_list = rebuild   # чтобы обновить после правки
         pop.open()
 
+    def _stub_popup(self, title, msg):
+        ClientsScreen._stub_popup(self, title, msg)
+
     def _quick_edit_one(self, idx, list_pop):
         app = App.get_running_app()
         if not app:
@@ -965,28 +968,13 @@ class MainMenu(Screen):
             if getattr(pop, 'is_dismissing_flag', False):
                 return
             pop.is_dismissing_flag = True
-            old_val = safe_float(c.get('debt', '0'))
             minus_val = safe_float(in_minus.text)
-            if minus_val > 0:
-                # «отдал» гасит долг В СТОРОНУ НУЛЯ (не пересекая ноль):
-                # положительный уменьшается, отрицательный (переплата) подтягивается к нулю
-                if old_val >= 0:
-                    d_val = old_val - minus_val
-                else:
-                    d_val = min(0.0, old_val + minus_val)
-            else:
-                d_val = safe_float(in_d.text)
-            c['debt'] = format_num_simple(d_val)
-            if d_val == 0.0:
-                c['zakupka_total'] = '0'
-            if (not c.get('is_creditor')
-                    and c.get('name', '').lower().strip() not in
-                    ("баннер остаток", "белый банер", "черный банер", "олег белый", "олег черный")):
-                # в прибыль идёт только реально погашенная ПОЛОЖИТЕЛЬНАЯ часть долга
-                realized = max(0.0, old_val) - max(0.0, d_val)
-                if realized > 0:
-                    app.profit_correction = str(round(safe_float(app.profit_correction) + realized, 2))
-            app.save_data()
+            d_val = payment_result(c.get('debt', '0'), minus_val) if minus_val > 0 else in_d.text
+            ok, message = change_balance(app, c, d_val)
+            if not ok:
+                pop.is_dismissing_flag = False
+                self._stub_popup('ДОЛГ', message)
+                return
             self._refresh_all()
             pop.dismiss()
             try:
@@ -3643,17 +3631,12 @@ class ClientsScreen(Screen):
             if getattr(pop, 'is_dismissing_flag', False):
                 return
             pop.is_dismissing_flag = True
-            d_val, old_val = safe_float(in_d.text), safe_float(c.get('debt', '0'))
-            if not is_special_banner and in_n:
-                c['name'] = in_n.text.strip()
-            c['debt'] = format_num_simple(d_val)
-            if d_val == 0.0:
-                c['zakupka_total'] = '0'
-            if not c.get('is_creditor') and not is_special_banner:
-                realized = max(0.0, old_val) - max(0.0, d_val)
-                if realized > 0:
-                    app.profit_correction = str(round(safe_float(app.profit_correction) + realized, 2))
-            app.save_data()
+            new_name = in_n.text.strip() if (not is_special_banner and in_n) else None
+            ok, message = change_balance(app, c, in_d.text, name=new_name)
+            if not ok:
+                pop.is_dismissing_flag = False
+                self._stub_popup('КЛИЕНТ', message)
+                return
             self.refresh_list()
             pop.dismiss()
 
@@ -3733,25 +3716,13 @@ class ClientsScreen(Screen):
         def save_debt(instance):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
-            old_val = safe_float(c.get('debt', '0'))
             minus_val = safe_float(in_minus.text)
-            if minus_val > 0:
-                # «отдал» гасит долг В СТОРОНУ НУЛЯ (не пересекая ноль):
-                # положительный уменьшается, отрицательный (переплата) подтягивается к нулю
-                if old_val >= 0:
-                    d_val = old_val - minus_val
-                else:
-                    d_val = min(0.0, old_val + minus_val)
-            else:
-                d_val = safe_float(in_d.text)
-            c['debt'] = format_num_simple(d_val)
-            if d_val == 0.0:
-                c['zakupka_total'] = '0'
-            if not c.get('is_creditor') and c.get('name', '').lower().strip() not in ("баннер остаток", "белый банер", "черный банер", "олег белый", "олег черный"):
-                realized = max(0.0, old_val) - max(0.0, d_val)
-                if realized > 0:
-                    app.profit_correction = str(round(safe_float(app.profit_correction) + realized, 2))
-            app.save_data()
+            d_val = payment_result(c.get('debt', '0'), minus_val) if minus_val > 0 else in_d.text
+            ok, message = change_balance(app, c, d_val)
+            if not ok:
+                pop.is_dismissing_flag = False
+                self._stub_popup('ДОЛГ', message)
+                return
             self.refresh_list()
             pop.dismiss()
 
