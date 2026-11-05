@@ -2768,7 +2768,7 @@ class ClientsScreen(Screen):
         is_new = ri is None
         roll = {} if is_new else app.rolls[ri]
         state = {'color': roll.get('color', 'white')}
-        content = BoxLayout(orientation='vertical', spacing=18, padding=[16, 14, 16, 14])
+        content = BoxLayout(orientation='vertical', spacing=10, padding=[16, 10, 16, 10])
         pop = TopMenuPopup(title=("НОВЫЙ РУЛОН" if is_new else "РУЛОН"), content=content, size_hint=(0.94, 0.86))
         pop.background_color = (0.043, 0.055, 0.08, 1)
 
@@ -2792,21 +2792,25 @@ class ClientsScreen(Screen):
         content.add_widget(Label(text="[b]ЦВЕТ[/b]", markup=True, font_size='15sp', color=(0.6, 0.65, 0.72, 1), size_hint_y=None, height=30))
         content.add_widget(color_row)
 
-        content.add_widget(Label(text="[b]ШИРИНА, м[/b]", markup=True, font_size='15sp', color=(0.4, 0.8, 1, 1), size_hint_y=None, height=30))
+        # Компактно: поля парами, чтобы «СОХРАНИТЬ» было видно над клавиатурой.
+        def _pair(left, right):
+            row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=132)
+            for caption, color, field in (left, right):
+                col = BoxLayout(orientation='vertical', spacing=4)
+                lbl = Label(text=caption, markup=True, font_size='14sp', color=color, size_hint_y=None, height=28)
+                col.add_widget(lbl)
+                col.add_widget(_bordered_field(field, color, 100, 1.0))
+                row.add_widget(col)
+            content.add_widget(row)
+
         in_w = _dark_input(text=str(roll.get('width', '')), hint_text="напр. 3.2", input_type='number', input_filter='float')
-        content.add_widget(_bordered_field(in_w, (0.4, 0.8, 1, 1), 150, 0.6))
-
-        content.add_widget(Label(text="[b]ВСЕГО, м[/b]", markup=True, font_size='15sp', color=(0.55, 0.6, 0.7, 1), size_hint_y=None, height=30))
+        in_use = _dark_input(hint_text="расход, м", input_type='number', input_filter='float')
         in_tot = _dark_input(text=format_num_simple(roll.get('total', '0')) if not is_new else "", hint_text="длина всего", input_type='number', input_filter='float')
-        content.add_widget(_bordered_field(in_tot, (0.45, 0.5, 0.6, 1), 140, 0.6))
-
-        content.add_widget(Label(text="[b]ОСТАТОК, м[/b]", markup=True, font_size='15sp', color=(0.41, 0.94, 0.68, 1), size_hint_y=None, height=30))
         in_rem = _dark_input(text=format_num_simple(roll.get('remain', '0')) if not is_new else "", hint_text="сколько осталось", input_type='number', input_filter='float')
-        content.add_widget(_bordered_field(in_rem, (0.41, 0.94, 0.68, 1), 140, 0.6))
-
-        content.add_widget(Label(text="СПИСАТЬ РАСХОД (ОТНЯТЬ ОТ ОСТАТКА)", font_size='13sp', color=(0.55, 0.6, 0.66, 1), size_hint_y=None, height=28))
-        in_use = _dark_input(hint_text="метры расхода...", input_type='number', input_filter='float')
-        content.add_widget(_bordered_field(in_use, (1.0, 0.72, 0.3, 1), 140, 0.6))
+        for f in (in_w, in_use, in_tot, in_rem):
+            f.padding = [8, 26, 8, 10]
+        _pair(("[b]ВСЕГО, м[/b]", (0.55, 0.6, 0.7, 1), in_tot), ("[b]ОСТАТОК, м[/b]", (0.41, 0.94, 0.68, 1), in_rem))
+        _pair(("[b]ШИРИНА, м[/b]", (0.4, 0.8, 1, 1), in_w), ("[b]СПИСАТЬ РАСХОД[/b]", (1.0, 0.72, 0.3, 1), in_use))
 
         def do_save(x):
             if getattr(pop, 'is_dismissing_flag', False):
@@ -2842,6 +2846,8 @@ class ClientsScreen(Screen):
 
         btn_save = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1), bold=True, radius=22, font_size='21sp', size_hint_y=None, height=104)
         btn_save.bind(on_release=do_save)
+        for f in (in_w, in_use, in_tot, in_rem):   # клавиша ↵ на клавиатуре = СОХРАНИТЬ
+            f.bind(on_text_validate=do_save)
         content.add_widget(btn_save)
 
         row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=100)

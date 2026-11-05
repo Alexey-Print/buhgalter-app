@@ -61,7 +61,7 @@ class WindowTests(unittest.TestCase):
     def test_roll_usage_and_new_roll_and_delete(self):
         self.screen._roll_edit_popup(0, None)
         pop = self.popup('РУЛОН')
-        self.field(pop, 'метры расхода...').text = '12,5'
+        self.field(pop, 'расход, м').text = '12,5'
         self.press(pop, 'СОХРАНИТЬ')
         self.assertEqual(self.app.rolls[0]['remain'], '62.5')
         self.screen._roll_edit_popup(None, None)
@@ -108,3 +108,25 @@ class WindowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RollKeyboardTests(WindowTests):
+    def test_enter_key_saves_roll(self):
+        self.screen._roll_edit_popup(0, None)
+        pop = self.popup('РУЛОН')
+        f = self.field(pop, 'сколько осталось')
+        f.text = '68'
+        f.dispatch('on_text_validate')
+        self.assertEqual(self.app.rolls[0]['remain'], '68')
+        self.assertEqual(self.messages, [])
+
+    def test_save_button_is_in_upper_part(self):
+        """Все поля и «СОХРАНИТЬ» помещаются в верхние ~55% окна (над клавиатурой)."""
+        Window.size = (1080, 2340)
+        self.screen._roll_edit_popup(0, None)
+        pop = self.popup('РУЛОН')
+        for _ in range(3):
+            Clock.tick()
+        save = next(w for w in pop.walk() if isinstance(w, Button) and w.text == 'СОХРАНИТЬ')
+        bottom_of_save = save.to_window(save.x, save.y)[1]
+        self.assertGreater(bottom_of_save, Window.height * 0.45, bottom_of_save)
