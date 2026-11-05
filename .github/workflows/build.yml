@@ -2,25 +2,53 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, audit-safe-fix-2026-11-05]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libmtdev1 xclip
+      - run: python -m pip install kivy==2.3.1
+      - run: python -m py_compile main.py accounting.py
+      - run: xvfb-run -a python run_checks.py
 
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Build APK in Docker
         run: |
+          set +e
           docker run --rm \
             --entrypoint bash \
             -v "$PWD":/home/user/hostcwd \
-            kivy/buildozer:latest \
-            -c "cd /home/user/hostcwd && yes | buildozer android debug"
-
-      - name: Upload APK
+            kivy/buildozer@sha256:92860ae3822fd533b90ab11f7c2272859980d34b791b1454a09a90e9849a5c7a \
+            -c "cd /home/user/hostcwd && yes | buildozer android debug" > build-android.log 2>&1
+          build_status=$?
+          tail -n 160 build-android.log
+          exit "$build_status"
+      - name: Save Android build log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: apk
-          path: bin/*.apk
+          name: android-build-log
+          path: build-android.log
+      - name: Record source and APK checksums
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" bin
+          git rev-parse HEAD > bin/SOURCE_COMMIT.txt
+          sha256sum main.py accounting.py buildozer.spec android_src/com/aleksey/uchet/UchetActivity.java bin/*.apk > bin/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uchet-audit-apk
+          path: bin/*
