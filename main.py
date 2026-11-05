@@ -4,6 +4,7 @@ import re
 import time
 import math
 import uuid
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
 from datetime import datetime
 import transfer
@@ -63,6 +64,20 @@ def safe_float(val, default=0.0):
 
 def format_num_simple(val):
     return money(val)
+
+
+def rub(val):
+    """Сумма для показа на экране — целые рубли (внутри всё хранится и считается до копейки)."""
+    try:
+        d = Decimal(str(val).replace(' ', '').replace('\u00a0', '').replace(',', '.'))
+        if not d.is_finite():
+            return '0'
+        d = d.quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError, TypeError):
+        return '0'
+    if not d:
+        return '0'
+    return format(d, ',.0f').replace(',', ' ')
 
 
 def _dark_input(**kw):
@@ -827,20 +842,20 @@ class MainMenu(Screen):
         if my_debt > 0.5:
             self.card_debt.title_lbl.text = "МОЙ ДОЛГ"
             self.card_debt.set_accent(_red)
-            self.card_debt.set_value(f"{format_num_simple(my_debt)} \u20bd", color=_red)
+            self.card_debt.set_value(f"{rub(my_debt)} \u20bd", color=_red)
         elif my_debt < -0.5:
             self.card_debt.title_lbl.text = "ПЕРЕПЛАТА"
             self.card_debt.set_accent(_green)
-            self.card_debt.set_value(f"{format_num_simple(abs(my_debt))} \u20bd", color=_green)
+            self.card_debt.set_value(f"{rub(abs(my_debt))} \u20bd", color=_green)
         else:
             self.card_debt.title_lbl.text = "МОЙ ДОЛГ"
             self.card_debt.set_accent(_red)
             self.card_debt.set_value("0 \u20bd", color=_gray)
-        self.card_clients.set_value(f"{format_num_simple(tot_debt)} \u20bd")
+        self.card_clients.set_value(f"{rub(tot_debt)} \u20bd")
         if profit >= 0:
-            self.card_profit.set_value(f"{format_num_simple(profit)} \u20bd", color=(1.0, 0.843, 0.251, 1))
+            self.card_profit.set_value(f"{rub(profit)} \u20bd", color=(1.0, 0.843, 0.251, 1))
         else:
-            self.card_profit.set_value(f"-{format_num_simple(abs(profit))} \u20bd", color=(1.0, 0.322, 0.322, 1))
+            self.card_profit.set_value(f"-{rub(abs(profit))} \u20bd", color=(1.0, 0.322, 0.322, 1))
 
     # ── БЫСТРЫЙ ДОСТУП К ДОЛГАМ ПРЯМО СО СТАРТОВОЙ ──
     def _refresh_all(self):
@@ -895,10 +910,10 @@ class MainMenu(Screen):
                 # реальный долг (>= 0) — акцентным цветом списка
                 if val < -0.001:
                     amt_color = (0.412, 0.941, 0.682)
-                    amount_text = f"{format_num_simple(abs(val))} \u20bd"
+                    amount_text = f"{rub(abs(val))} \u20bd"
                 else:
                     amt_color = accent
-                    amount_text = f"{format_num_simple(c.get('debt', 0))} \u20bd"
+                    amount_text = f"{rub(c.get('debt', 0))} \u20bd"
                 row = QuickDebtRow(name=name, amount_text=amount_text,
                                    accent=accent, amt_color=amt_color)
                 row.bind(on_release=lambda x, idx=i: self._quick_edit_one(idx, pop))
@@ -958,7 +973,7 @@ class MainMenu(Screen):
         cap_head = Label(text="[b]ТЕКУЩИЙ ДОЛГ[/b]", markup=True, font_size='15sp',
                          color=(0.5, 0.78, 0.85, 1), halign='center', valign='middle', size_hint_y=0.36)
         cap_head.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        val_head = Label(text=f"[b][color=#FFD54F]{format_num_simple(c.get('debt', '0'))} \u20bd[/color][/b]",
+        val_head = Label(text=f"[b][color=#FFD54F]{rub(c.get('debt', '0'))} \u20bd[/color][/b]",
                          markup=True, font_size='29sp', halign='center', valign='middle', size_hint_y=0.64)
         val_head.bind(size=lambda s, v: setattr(s, 'text_size', v))
         head.add_widget(cap_head)
@@ -1340,26 +1355,40 @@ class ClientsScreen(Screen):
             Color(g[0], g[1], g[2], 0.95)
             Line(rounded_rectangle=(x + 1, y + 1, wd - 2, h - 2, 12), width=1.8)
 
-    def _fit_font(self, lbl, max_sp=19, min_sp=12):
+    def _fit_font(self, lbl, max_sp=19, min_sp=12, fallback=None):
+        """Подобрать шрифт под ширину. Текст всегда в одну строку (без переноса, который прятал имя).
+        Если не влезает даже мелким шрифтом — показать короткий вариант fallback."""
         from kivy.core.text import Label as CoreLabel
         from kivy.metrics import sp
+        full = [lbl.text]
+        lbl.max_lines = 1
+        lbl.shorten = True
+        lbl.shorten_from = 'right'
+
+        def width_of(text, size):
+            cl = CoreLabel(text=text, font_size=sp(size), markup=True, bold=getattr(lbl, 'bold', False))
+            try:
+                cl.refresh()
+                return cl.texture.size[0]
+            except Exception:
+                return 0
 
         def _do(*a):
+            if lbl.text not in (full[0], fallback):
+                full[0] = lbl.text
             avail = lbl.width - 4
             if avail < 10:
                 return
-            chosen = min_sp
-            for size in range(max_sp, min_sp - 1, -1):
-                cl = CoreLabel(text=lbl.text, font_size=sp(size), markup=True)
-                try:
-                    cl.refresh()
-                    w = cl.texture.size[0]
-                except Exception:
-                    w = 0
-                if w <= avail:
-                    chosen = size
-                    break
-            lbl.font_size = '%dsp' % chosen
+            for text in [full[0]] + ([fallback] if fallback else []):
+                for size in range(max_sp, min_sp - 1, -1):
+                    if width_of(text, size) <= avail:
+                        if lbl.text != text:
+                            lbl.text = text
+                        lbl.font_size = '%dsp' % size
+                        return
+            if fallback and lbl.text != fallback:
+                lbl.text = fallback
+            lbl.font_size = '%dsp' % min_sp
 
         lbl.bind(width=_do)
         lbl.bind(text=_do)
@@ -1480,7 +1509,7 @@ class ClientsScreen(Screen):
             else:
                 disp = "БЕЛЫЙ" if kind == 'white' else "ЧЕРНЫЙ"
                 dnum = abs(safe_float(client.get('debt', '0')))
-                dval = format_num_simple(dnum)
+                dval = rub(dnum)
                 if dnum > 0:
                     text = f"[b][color=#FFFFFF]{disp}[/color][/b]  [color=#9A9A9A]МИНУС:[/color] [b][color=#FF8A80]{dval} р[/color][/b]"
                 else:
@@ -1495,12 +1524,13 @@ class ClientsScreen(Screen):
         client = app.clients[i]
         n_orig = client.get('name', '').upper()
         d_num = abs(safe_float(client.get('debt', '0')))
-        d_val = format_num_simple(d_num)
+        d_val = rub(d_num)
         row = BoxLayout(size_hint_y=None, height=116, spacing=8)
         lbl = Label(text=f"[b][color=#FFFFFF]{n_orig}[/color][/b]  [color=#9A9A9A]ДОЛГ:[/color]",
                     markup=True, font_size='19sp', halign='left', valign='middle')
         lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(lbl, max_sp=25, min_sp=15)
+        # Имя важнее слова «ДОЛГ:» — при длинной сумме слово убирается, имя остаётся.
+        self._fit_font(lbl, max_sp=25, min_sp=13, fallback=f"[b][color=#FFFFFF]{n_orig}[/color][/b]")
         badge = self._debt_badge(f"{d_val} р" if d_num > 0 else "0", positive=(d_num > 0))
         click = ClickBox(orientation='horizontal', padding=[10, 0, 8, 0], spacing=8)
         click.add_widget(lbl)
@@ -1522,7 +1552,7 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         c = app.clients[idx]
         c_name = c.get('name', '').upper()
-        d_val = format_num_simple(c.get('debt', '0'))
+        d_val = rub(c.get('debt', '0'))
         row = BoxLayout(size_hint_y=None, height=116, spacing=8)
         d_num_cr = safe_float(c.get('debt', '0'))
         lbl = Label(text=f"[b][color=#FFFFFF]{c_name}[/color][/b]",
@@ -1551,22 +1581,22 @@ class ClientsScreen(Screen):
         tot_debt, my_debt, _, profit_val = app.get_totals()
         card = self._make_section("ОБЩИЕ ИТОГИ", (0.5, 0.81, 0.6, 1), (0.5, 0.81, 0.6, 1), hdr_text=(0.05, 0.23, 0.11, 1))
         r1 = BoxLayout(size_hint_y=None, height=92)
-        l1 = Label(text=f"[b][color=#FFFFFF]ДОЛЖНЫ: [/color][color=#8FE6B0]{format_num_simple(tot_debt)} р[/color][/b]",
+        l1 = Label(text=f"[b][color=#FFFFFF]ДОЛЖНЫ: [/color][color=#8FE6B0]{rub(tot_debt)} р[/color][/b]",
                    markup=True, font_size='23sp', halign='center', valign='middle')
         l1.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(l1, max_sp=30, min_sp=17)
+        self._fit_font(l1, max_sp=30, min_sp=12)
         l1.bind(pos=lambda *a: self._draw_tap_bg(l1),
                 size=lambda *a: self._draw_tap_bg(l1))
         r1.add_widget(l1)
         card.add_widget(r1)
         r2 = BoxLayout(size_hint_y=None, height=92, spacing=6)
         if profit_val >= 0:
-            ptxt = f"[b][color=#FFFFFF]ПРИБЫЛЬ: [/color][color=#8FE6B0]{format_num_simple(profit_val)} р[/color][/b]"
+            ptxt = f"[b][color=#FFFFFF]ПРИБЫЛЬ: [/color][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
         else:
-            ptxt = f"[b][color=#FF6B6B]ПРИБЫЛЬ: -{format_num_simple(abs(profit_val))} р[/color][/b]"
+            ptxt = f"[b][color=#FF6B6B]ПРИБЫЛЬ: -{rub(abs(profit_val))} р[/color][/b]"
         pl = Label(text=ptxt, markup=True, font_size='23sp', halign='center', valign='middle')
         pl.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(pl, max_sp=30, min_sp=17)
+        self._fit_font(pl, max_sp=30, min_sp=12)
         pclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
         pclick.add_widget(pl)
         pclick.bind(on_release=lambda x: self.show_profit_correction_popup())
@@ -1627,7 +1657,7 @@ class ClientsScreen(Screen):
                         RoundedRectangle(pos=w.pos, size=w.size, radius=[(14, 14)] * 4)
                 row.bind(pos=_rb, size=_rb)
                 extra = ' [size=11sp][color=#FFB347](\u043f\u0440\u0435\u0434\u043f\u043e\u043b\u0430\u0433.)[/color][/size]' if assumed else ''
-                line = Label(text=f"[b]{name}[/b]  [size=12sp][color=#7A8494]{date}[/color][/size]   [b][color={col}]{sign}{format_num_simple(abs(pr))} \u20bd[/color][/b]" + extra,
+                line = Label(text=f"[b]{name}[/b]  [size=12sp][color=#7A8494]{date}[/color][/size]   [b][color={col}]{sign}{rub(abs(pr))} \u20bd[/color][/b]" + extra,
                              markup=True, font_size='17sp', color=(1, 1, 1, 1), halign='left', valign='middle')
                 line.bind(size=lambda s, v: setattr(s, 'text_size', v))
                 row.add_widget(line)
@@ -1718,7 +1748,7 @@ class ClientsScreen(Screen):
                      halign='center', valign='middle', size_hint_y=0.36, radius=10)
         _pl1.bg_color = [0.06, 0.18, 0.1, 1]
         _pl1.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        _pl2 = Label(text=f"[b][color=#8FE6B0]{format_num_simple(net_profit)} руб[/color][/b]", markup=True,
+        _pl2 = Label(text=f"[b][color=#8FE6B0]{rub(net_profit)} руб[/color][/b]", markup=True,
                      font_size='30sp', halign='center', valign='middle', size_hint_y=0.64)
         _pl2.bind(size=lambda s, v: setattr(s, 'text_size', v))
         prof_card.add_widget(_pl1)
@@ -1750,9 +1780,9 @@ class ClientsScreen(Screen):
             row.bind(texture_size=_h)
             return row
 
-        content.add_widget(stat_row("ОБОРОТ (клиенты)", f"{format_num_simple(total_revenue)} р", "#8FD3FF"))
-        content.add_widget(stat_row("ОТДАНО ЗА ПЕЧАТЬ", f"{format_num_simple(paid_to_print)} р", "#FF8A80"))
-        content.add_widget(stat_row("ЗАКУПКА БАНЕРОВ", f"{format_num_simple(banner_purchases)} р", "#FF8A80"))
+        content.add_widget(stat_row("ОБОРОТ (клиенты)", f"{rub(total_revenue)} р", "#8FD3FF"))
+        content.add_widget(stat_row("ОТДАНО ЗА ПЕЧАТЬ", f"{rub(paid_to_print)} р", "#FF8A80"))
+        content.add_widget(stat_row("ЗАКУПКА БАНЕРОВ", f"{rub(banner_purchases)} р", "#FF8A80"))
 
         content.add_widget(Widget(size_hint_y=None, height=10))
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
@@ -1959,7 +1989,7 @@ class ClientsScreen(Screen):
                     filtered_items.append((i, item))
             day_total = sum(safe_float(item.get('sum', '0')) for _, item in filtered_items)
             grand_total = safe_float(client.get('debt', '0'))
-            lbl_total.text = f"[b][color=#FFD54F]{format_num_simple(grand_total)} \u20bd[/color][/b]"
+            lbl_total.text = f"[b][color=#FFD54F]{rub(grand_total)} \u20bd[/color][/b]"
             _today = datetime.now().strftime("%d.%m.%y")
             _dp = date_str.split('.')
             if len(_dp) == 3:
@@ -1977,7 +2007,7 @@ class ClientsScreen(Screen):
                 s = safe_float(item.get('sum', 0))
                 if p > 0:
                     day_meters += s / p
-            title_lbl.text = f"[color=#00FF00][b]{format_num_simple(day_total)} \u20bd[/b][/color]"
+            title_lbl.text = f"[color=#00FF00][b]{rub(day_total)} \u20bd[/b][/color]"
             meters_lbl.text = f"[color=#88CCFF]{format_num_simple(round(day_meters, 2))} м²[/color]" if day_meters > 0 else ""
 
             if not filtered_items:
@@ -2060,7 +2090,7 @@ class ClientsScreen(Screen):
             grand_total = safe_float(client.get('debt', '0'))
 
             lbl_g = Label(
-                text=f"[b][color=#FFD700]ИТОГО ДОЛГ: {format_num_simple(grand_total)} р[/color][/b]",
+                text=f"[b][color=#FFD700]ИТОГО ДОЛГ: {rub(grand_total)} р[/color][/b]",
                 markup=True, font_size='22sp', halign='center', valign='middle',
                 size_hint_y=None, height=55
             )
@@ -2085,7 +2115,7 @@ class ClientsScreen(Screen):
 
             copy_lines = [
                 f"КЛИЕНТ: {client.get('name', '').upper()}",
-                f"ОБЩИЙ ДОЛГ: {format_num_simple(grand_total)} р",
+                f"ОБЩИЙ ДОЛГ: {rub(grand_total)} р",
                 "=" * 34
             ]
 
@@ -2106,13 +2136,13 @@ class ClientsScreen(Screen):
                     day_total = sum(safe_float(it.get('sum', 0)) for it in items_for_day)
 
                     hdr = Label(
-                        text=f"[b][color=#AABBFF]  {d_str}[/color]   [color=#00FF88]+ {format_num_simple(day_total)} р[/color][/b]",
+                        text=f"[b][color=#AABBFF]  {d_str}[/color]   [color=#00FF88]+ {rub(day_total)} р[/color][/b]",
                         markup=True, font_size='17sp', halign='left', valign='middle',
                         size_hint_y=None, height=44
                     )
                     hdr.bind(size=lambda s, v: setattr(s, 'text_size', v))
                     all_list.add_widget(hdr)
-                    copy_lines.append(f"\n{d_str}  (+{format_num_simple(day_total)} р):")
+                    copy_lines.append(f"\n{d_str}  (+{rub(day_total)} р):")
 
                     counter = 1
                     for item in items_for_day:
@@ -2143,7 +2173,7 @@ class ClientsScreen(Screen):
                         counter += 1
 
             copy_lines.append(f"\n{'=' * 34}")
-            copy_lines.append(f"ИТОГО ДОЛГ: {format_num_simple(grand_total)} р")
+            copy_lines.append(f"ИТОГО ДОЛГ: {rub(grand_total)} р")
             copy_text = "\n".join(copy_lines)
 
             btn_copy = RoundedButton(
@@ -2215,7 +2245,7 @@ class ClientsScreen(Screen):
                 m_name = months_names.get(m_code, m_code)
                 m_total = monthly_totals.get(my, 0)
                 btn_m = RoundedButton(
-                    text=f"[b]{m_name.upper()}[/b]    [color=#FFD700]{format_num_simple(m_total)} р[/color]",
+                    text=f"[b]{m_name.upper()}[/b]    [color=#FFD700]{rub(m_total)} р[/color]",
                     markup=True, font_size='19sp',
                     bg_color=(0.15, 0.45, 0.75, 1), height=100, size_hint_y=None, bold=True
                 )
@@ -2250,7 +2280,7 @@ class ClientsScreen(Screen):
                 full_date_str = f"{day}.{month_year}"
                 day_total = daily_totals.get(day, 0)
                 btn_d = RoundedButton(
-                    text=f"[b][size=24sp]{int(day)}[/size][/b]   [size=13sp][color=#FFD700]{format_num_simple(day_total)} р[/color][/size]",
+                    text=f"[b][size=24sp]{int(day)}[/size][/b]   [size=13sp][color=#FFD700]{rub(day_total)} р[/color][/size]",
                     markup=True,
                     bg_color=(0.7, 0.4, 0.1, 1), height=80, size_hint_y=None
                 )
@@ -2306,10 +2336,10 @@ class ClientsScreen(Screen):
         tot_debt, my_debt, _, _ = app.get_totals()
         m_indices, o_idx, b_idx, c_idx = app.get_special_clients()
         special_indices = [i for i in (o_idx, c_idx, b_idx) if i is not None] + m_indices
-        lines = [f"{c.get('name', '').upper().strip()}: {format_num_simple(safe_float(c.get('debt', 0)))} руб"
+        lines = [f"{c.get('name', '').upper().strip()}: {rub(safe_float(c.get('debt', 0)))} руб"
                  for i, c in enumerate(app.clients) if i not in special_indices]
-        lines.append(f"КЛИЕНТЫ ДОЛЖНЫ: {format_num_simple(tot_debt)} руб")
-        lines.append(f"МОЙ ДОЛГ (ВСЕГО): {format_num_simple(my_debt)} руб")
+        lines.append(f"КЛИЕНТЫ ДОЛЖНЫ: {rub(tot_debt)} руб")
+        lines.append(f"МОЙ ДОЛГ (ВСЕГО): {rub(my_debt)} руб")
         Clipboard.copy("\n".join(lines))
         instance.bg_color = [0.1, 0.8, 0.1, 1]
         Clock.schedule_once(lambda dt: (setattr(instance, 'text', "СКОПИРОВАТЬ"), setattr(instance, 'bg_color', [0.15, 0.55, 0.75, 1])), 1.5)
@@ -2429,7 +2459,7 @@ class ClientsScreen(Screen):
         else:
             profit_color = "#FF6B6B"
         lbl_profit_val = Label(
-            text=f"[b][color={profit_color}]{format_num_simple(current_profit)} руб[/color][/b]",
+            text=f"[b][color={profit_color}]{rub(current_profit)} руб[/color][/b]",
             markup=True, font_size='36sp', halign='center', valign='middle', size_hint_y=0.7)
         lbl_profit_val.bind(size=lambda s, v: setattr(s, 'text_size', v))
         profit_card.add_widget(lbl_subtitle)
@@ -3398,7 +3428,7 @@ class ClientsScreen(Screen):
             client_pay = l * w * self.current_calc_price * c
             print_pay = l * w * cost * c
             if not _show_print_cost:
-                res.text = f"[b]КЛИЕНТ: {format_num_simple(client_pay)} руб[/b]"
+                res.text = f"[b]КЛИЕНТ: {rub(client_pay)} руб[/b]"
             app.print_cost = str(cost)
             if pending_cost_save[0] is not None:
                 pending_cost_save[0].cancel()
@@ -3443,7 +3473,7 @@ class ClientsScreen(Screen):
         def drop_last_line():
             last = self.raw_history_lines.pop()
             self.order_total_accumulator = round(self.order_total_accumulator - safe_float(last['sum']), 2)
-            btn_total_order.text = f"СУММА ЗАКАЗА:\n{format_num_simple(self.order_total_accumulator)} руб"
+            btn_total_order.text = f"СУММА ЗАКАЗА:\n{rub(self.order_total_accumulator)} руб"
             if history_layout.children:
                 history_layout.remove_widget(history_layout.children[0])
             if not self.raw_history_lines and empty_placeholder.parent is None:
@@ -3510,7 +3540,7 @@ class ClientsScreen(Screen):
             self.history_counter += 1
             pure_sum = format_num_simple(client_pay).replace(' ', '')
             self.order_total_accumulator += safe_float(pure_sum)
-            btn_total_order.text = f"СУММА ЗАКАЗА:\n{format_num_simple(self.order_total_accumulator)} руб"
+            btn_total_order.text = f"СУММА ЗАКАЗА:\n{rub(self.order_total_accumulator)} руб"
             saved_item = app.clients[idx]['history'][-1]
             banner_deducted = saved_item.get('banner_deduction', 0.0)
             banner_deducted2 = saved_item.get('banner_deduction2', 0.0)
@@ -3526,7 +3556,7 @@ class ClientsScreen(Screen):
                 Color(0.25, 0.25, 0.25, 0.4)
                 rect = RoundedRectangle(pos=row_card.pos, size=row_card.size, radius=[(10, 10), (10, 10), (10, 10), (10, 10)])
             row_card.bind(pos=lambda s, p: setattr(rect, 'pos', p), size=lambda s, sz: setattr(rect, 'size', sz))
-            t_line = f"{l_val}x{w_val} [color=#FF4444]{format_num_simple(self.current_calc_price)}[/color] x{c_val}шт = {pure_sum}" + (f" [color=#FF4444](-{format_num_simple(p_cost)})[/color]" if not app.clients[idx].get('is_creditor') else "")
+            t_line = f"{l_val}x{w_val} [color=#FF4444]{format_num_simple(self.current_calc_price)}[/color] x{c_val}шт = {rub(pure_sum)}" + (f" [color=#FF4444](-{format_num_simple(p_cost)})[/color]" if not app.clients[idx].get('is_creditor') else "")
             h_line = Label(text=t_line, markup=True, font_size='16sp', halign='left', valign='middle')
             h_line.bind(size=lambda s, v: setattr(s, 'text_size', (s.width, None)))
             row_card.add_widget(h_line)
@@ -3627,7 +3657,7 @@ class ClientsScreen(Screen):
                     dop_pop.dismiss()
                     return
                 self.order_total_accumulator += val
-                btn_total_order.text = f"СУММА ЗАКАЗА:\n{format_num_simple(self.order_total_accumulator)} руб"
+                btn_total_order.text = f"СУММА ЗАКАЗА:\n{rub(self.order_total_accumulator)} руб"
                 cr_name_target = app.clients[idx]['history'][-1].get('creditor_name')
                 self.raw_history_lines.append({'oid': app.clients[idx]['history'][-1].get('oid'), 'num': self.history_counter + 1, 'l': '', 'w': '', 'c': '1',
                                                'sum': format_num_simple(val), 'mode': 'dop', 'price': None,

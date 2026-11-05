@@ -108,3 +108,30 @@ class DecimalCommaTests(unittest.TestCase):
         self.assertEqual(self.typed('13.05', input_filter='float'), '13.05')
         self.assertEqual(main.safe_float(self.typed('1,5,5', input_filter='float')), 1.55)  # одна точка
         self.assertEqual(self.typed('Иванов, ООО'), 'Иванов, ООО')  # в обычных полях запятая остаётся
+
+
+class DisplayTests(unittest.TestCase):
+    def test_whole_rubles_on_screen(self):
+        self.assertEqual([main.rub(x) for x in ('432 068.06', '640.5', '-1234.49', '0.4')],
+                         ['432 068', '641', '-1 234', '0'])
+
+    def test_long_sum_never_hides_client_name(self):
+        tmp = tempfile.TemporaryDirectory()
+        old = main.BASE_PATH, main.DATA_FILE
+        main.BASE_PATH, main.DATA_FILE = tmp.name, tmp.name + '/business_data.json'
+        try:
+            app = main.BusinessApp(); main.App._running_app = app; app.load_data()
+            app.clients.append({'name': 'САША', 'debt': '432 068.06'})
+            screen = main.ClientsScreen(name='d')
+            row = screen._build_client_row(len(app.clients) - 1)
+            name_lbl = next(w for w in row.walk() if isinstance(w, main.Label) and 'САША' in w.text)
+            for width in (600, 260, 140):
+                name_lbl.width = width
+                Clock.tick()
+                self.assertIn('САША', name_lbl.text)
+                self.assertEqual(name_lbl.max_lines, 1)
+            badge = [w.text for w in row.walk() if isinstance(w, main.Label) and 'р' in w.text]
+            self.assertTrue(any('432 068 р' in t for t in badge), badge)
+        finally:
+            main.BASE_PATH, main.DATA_FILE = old
+            tmp.cleanup()
