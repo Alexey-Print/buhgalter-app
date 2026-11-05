@@ -3457,7 +3457,7 @@ class ClientsScreen(Screen):
             banner_deducted2 = saved_item.get('banner_deduction2', 0.0)
             banner_deducted2_idx = saved_item.get('banner_deduction2_idx')
             cr_name_target = saved_item.get('creditor_name')
-            self.raw_history_lines.append({'num': self.history_counter, 'l': l_val, 'w': w_val, 'c': c_val, 'sum': pure_sum, 'mode': self.current_calc_mode, 'price': self.current_calc_price, 'print_cost': p_cost, 'via_malevich': via_malevich, 'creditor_name': cr_name_target, 'client_idx': idx, 'banner_deduction': banner_deducted, 'banner_deduction2': banner_deducted2, 'banner_deduction2_idx': banner_deducted2_idx})
+            self.raw_history_lines.append({'oid': saved_item.get('oid'), 'num': self.history_counter, 'l': l_val, 'w': w_val, 'c': c_val, 'sum': pure_sum, 'mode': self.current_calc_mode, 'price': self.current_calc_price, 'print_cost': p_cost, 'via_malevich': via_malevich, 'creditor_name': cr_name_target, 'client_idx': idx, 'banner_deduction': banner_deducted, 'banner_deduction2': banner_deducted2, 'banner_deduction2_idx': banner_deducted2_idx})
             if empty_placeholder.parent is None:
                 pass
             else:
@@ -3568,7 +3568,7 @@ class ClientsScreen(Screen):
                 self.order_total_accumulator += val
                 btn_total_order.text = f"СУММА ЗАКАЗА:\n{format_num_simple(self.order_total_accumulator)} руб"
                 cr_name_target = app.clients[idx]['history'][-1].get('creditor_name')
-                self.raw_history_lines.append({'num': self.history_counter + 1, 'l': '', 'w': '', 'c': '1',
+                self.raw_history_lines.append({'oid': app.clients[idx]['history'][-1].get('oid'), 'num': self.history_counter + 1, 'l': '', 'w': '', 'c': '1',
                                                'sum': format_num_simple(val), 'mode': 'dop', 'price': None,
                                                'print_cost': 0.0, 'via_malevich': via_malevich,
                                                'creditor_name': cr_name_target, 'client_idx': idx, 'banner_deduction': 0.0})
@@ -3625,6 +3625,7 @@ class ClientsScreen(Screen):
                     app.clients[creditor_idx]['history'] = []
                 c_name = app.clients[idx].get('name', 'Клиент')
                 m_hist_item = {
+                    'source_oid': _oid,
                     'date': hist_item['date'],
                     'desc': f"{c_name} {order_desc}",
                     'sum': format_num_simple(print_cost),
