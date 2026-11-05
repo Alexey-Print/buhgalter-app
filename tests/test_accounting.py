@@ -73,12 +73,12 @@ class AccountingTests(unittest.TestCase):
                 self.assertEqual(self.app.get_totals(), before)
                 self.assertEqual(self.oleg['debt'], '1 000')
 
-    def test_existing_fractional_cost_matches_payable_contractor_charge(self):
-        item = self.add(cost=5)
-        item['print_cost'] = 4.995
-        self.assertTrue(reverse_order(self.app, self.nastya, item)[0])
-        self.assertEqual(self.oleg['debt'], '1 000')
-        self.assertEqual(self.nastya['debt'], '0')
+    def test_existing_ambiguous_fractional_cost_does_not_change_balances(self):
+        item = self.add(cost=1.01)
+        item['print_cost'] = 1.005
+        before = copy.deepcopy((self.app.clients, self.app.profit_correction, self.app.profit_log))
+        self.assertFalse(reverse_order(self.app, self.nastya, item)[0])
+        self.assertEqual((self.app.clients, self.app.profit_correction, self.app.profit_log), before)
 
     def test_duplicate_amount_date_and_rename_reorder(self):
         first = self.add(); second = self.add()
