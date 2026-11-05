@@ -45,6 +45,7 @@ jobs:
           path: build-android.log
       - name: Record source and APK checksums
         run: |
+          sudo chown -R "$(id -u):$(id -g)" bin
           git rev-parse HEAD > bin/SOURCE_COMMIT.txt
           sha256sum main.py accounting.py buildozer.spec android_src/com/aleksey/uchet/UchetActivity.java bin/*.apk > bin/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
