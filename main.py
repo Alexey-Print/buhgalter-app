@@ -66,7 +66,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "2.5"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "2.6"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -2092,6 +2092,8 @@ class ClientsScreen(Screen):
                     row.bind(pos=_draw_row_bg, size=_draw_row_bg)
                     lbl = Label(text=desc_text, markup=True, font_size='13sp', halign='left', valign='middle')
                     lbl.bind(size=lambda s, v: setattr(s, 'text_size', (v[0], None)))
+                    # высота строки — по тексту: при переносе строка растёт, а не наезжает на соседнюю
+                    lbl.bind(texture_size=lambda s, ts, r=row: setattr(r, 'height', max(64, ts[1] + 14)))
                     del_btn = RoundedButton(text="X", bg_color=(0.8, 0.2, 0.2, 1), size_hint_x=None, width=54, radius=12)
                     del_btn.bind(on_release=lambda x, order=item, day=date_str: delete_item_callback(order, day))
                     row.add_widget(lbl)
