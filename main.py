@@ -3728,9 +3728,16 @@ class ClientsScreen(Screen):
             t_pop = TopMenuPopup(title="ТАКСИ", content=BoxLayout(orientation='vertical', spacing=12, padding=20), size_hint=(0.9, 0.7))
             row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=150)
             f_paid, in_paid = self._labeled_field("Я ЗАПЛАТИЛ, руб", "0")
-            f_bill, in_bill = self._labeled_field("КЛИЕНТУ, руб", "0")
+            f_bill, in_bill = self._labeled_field("КЛИЕНТУ, руб", "= столько же")
             row.add_widget(f_paid); row.add_widget(f_bill)
             t_pop.content.add_widget(row)
+            share_row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=70)
+            btn_full = RoundedButton(text="ВСЁ КЛИЕНТУ", bg_color=(0.25, 0.32, 0.45, 1), bold=True, font_size='16sp', radius=14)
+            btn_half = RoundedButton(text="ПОПОЛАМ", bg_color=(0.25, 0.32, 0.45, 1), bold=True, font_size='16sp', radius=14)
+            btn_full.bind(on_release=lambda x: setattr(in_bill, 'text', ''))
+            btn_half.bind(on_release=lambda x: setattr(in_bill, 'text', format_num_simple(round(safe_float(in_paid.text) / 2, 2))))
+            share_row.add_widget(btn_full); share_row.add_widget(btn_half)
+            t_pop.content.add_widget(share_row)
             t_info = Label(text="", markup=True, font_size='17sp', size_hint_y=None, height=130, halign='center', valign='middle')
             t_info.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
             t_pop.content.add_widget(t_info)
@@ -3742,8 +3749,14 @@ class ClientsScreen(Screen):
 
             def t_show(*a):
                 paid, bill = t_vals()
-                t_info.text = (f"[b]в долг клиенту: [color=#00FF00]{rub(bill)} р[/color][/b]\n"
-                               f"прибыль: [color=#FFD54F]{rub(bill - paid)} р[/color]")
+                diff = round(bill - paid, 2)
+                if diff < 0:
+                    tail = f"из моей прибыли: [color=#FF6666]{rub(-diff)} р[/color]"
+                elif diff > 0:
+                    tail = f"в прибыль: [color=#FFD54F]{rub(diff)} р[/color]"
+                else:
+                    tail = "[color=#AAB4C8]в прибыль не идёт[/color]"
+                t_info.text = f"[b]в долг клиенту: [color=#00FF00]{rub(bill)} р[/color][/b]\n{tail}"
             in_paid.bind(text=t_show); in_bill.bind(text=t_show); t_show()
 
             def save_taxi(x):

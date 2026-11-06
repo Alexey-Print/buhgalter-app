@@ -109,3 +109,13 @@ class TaxiTests(OrderEditTests):
         self.assertEqual((new['mode'], new['desc'], new['badge']), ('taxi', 'Такси', '[ТАКСИ]'))
         self.assertEqual(self.sasha['debt'], money(1700))
         self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 250)
+
+
+class TaxiShareTests(TaxiTests):
+    def test_full_and_half(self):
+        p0 = self.app.get_totals()[3]
+        self.taxi(400, 400)          # всё клиенту — прибыль не меняется
+        self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 0)
+        self.taxi(400, 200)          # пополам — моя половина из прибыли
+        self.assertEqual(round(self.app.get_totals()[3] - p0, 2), -200)
+        self.assertEqual(self.sasha['debt'], money(1600))
