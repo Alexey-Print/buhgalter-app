@@ -1700,7 +1700,7 @@ class ClientsScreen(Screen):
         content.add_widget(f_amt)
         row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=96)
         b_take = RoundedButton(text="ОТДАЛ", bg_color=(0.18, 0.48, 0.86, 1), bold=True, font_size='19sp', radius=18)
-        b_reset = RoundedButton(text="ОБНУЛИТЬ ТЕКУЩУЮ", bg_color=(0.32, 0.36, 0.44, 1), bold=True, font_size='16sp', radius=18)
+        b_reset = RoundedButton(text="ОБНУЛИТЬ", bg_color=(0.32, 0.36, 0.44, 1), bold=True, font_size='19sp', radius=18)
         row.add_widget(b_take); row.add_widget(b_reset)
         content.add_widget(row)
         hist_lbl = Label(text="", markup=True, font_size='14sp', halign='left', valign='top')
