@@ -119,3 +119,38 @@ class TaxiShareTests(TaxiTests):
         self.taxi(400, 200)          # пополам — моя половина из прибыли
         self.assertEqual(round(self.app.get_totals()[3] - p0, 2), -200)
         self.assertEqual(self.sasha['debt'], money(1600))
+
+
+class PencilPaymentTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_base, self.old_file = main.BASE_PATH, main.DATA_FILE
+        main.BASE_PATH, main.DATA_FILE = self.tmp.name, self.tmp.name + '/business_data.json'
+        self.app = main.BusinessApp()
+        main.App._running_app = self.app
+        self.app.load_data()
+        self.app.clients.append({'name': 'ЛЕХА', 'debt': '5115.6', 'history': []})
+        self.s = main.ClientsScreen(name='test')
+        self.s.refresh_list = lambda: None
+        self.s._stub_popup = lambda t, m: None
+        self.app.save_data()
+
+    def tearDown(self):
+        main.BASE_PATH, main.DATA_FILE = self.old_base, self.old_file
+        self.tmp.cleanup()
+
+    def test_pay_part(self):
+        from kivy.core.window import Window
+        from kivy.uix.popup import Popup
+        from kivy.uix.textinput import TextInput
+        from kivy.uix.button import Button
+        p0 = self.app.get_totals()[3]
+        self.s.show_edit_popup(len(self.app.clients) - 1)
+        pop = [w for w in Window.children if isinstance(w, Popup)][0]
+        pay = [w for w in pop.walk() if isinstance(w, TextInput) and w.hint_text == '0'][0]
+        pay.text = '1000'
+        [w for w in pop.walk() if isinstance(w, Button) and w.text == 'СОХРАНИТЬ'][0].dispatch('on_release')
+        pop.dismiss()
+        self.assertEqual(self.app.clients[-1]['debt'], money(4115.6))
+        self.assertEqual(self.app.clients[-1]['name'], 'ЛЕХА')
+        self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 0)

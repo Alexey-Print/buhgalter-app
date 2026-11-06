@@ -663,6 +663,25 @@ class StatCard(ButtonBehavior, BoxLayout):
         self._draw()
 
 
+class TapTextRow(ButtonBehavior, Label):
+    """Нажимаемая строка текста: высота сама подстраивается под текст (1, 2, 3 строки)."""
+    def __init__(self, **kw):
+        kw.setdefault('markup', True)
+        kw.setdefault('halign', 'left')
+        kw.setdefault('valign', 'middle')
+        kw.setdefault('size_hint_y', None)
+        super().__init__(**kw)
+        self.bind(width=lambda s, v: setattr(s, 'text_size', (v - 36, None)),
+                  texture_size=lambda s, ts: setattr(s, 'height', max(110, ts[1] + 40)),
+                  pos=self._bg, size=self._bg, state=self._bg)
+
+    def _bg(self, *a):
+        self.canvas.before.clear()
+        with self.canvas.before:
+            Color(*((0.2, 0.26, 0.36, 1) if self.state == 'down' else (0.12, 0.15, 0.21, 1)))
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[(12, 12)] * 4)
+
+
 class QuickDebtRow(ButtonBehavior, BoxLayout):
     """Крупная неоновая карточка-строка для быстрого списка долгов."""
     def __init__(self, name='', amount_text='', accent=(1, 1, 1, 1), amt_color=None, **kw):
@@ -3976,6 +3995,10 @@ class ClientsScreen(Screen):
         # ── ДОЛГ ──
         in_d = styled_input(text=str(c.get('debt', '0')).replace(',', '.'),
                             input_type='number', input_filter='float')
+        in_pay = None
+        if not is_special_banner:
+            in_pay = styled_input(hint_text="0", input_type='number', input_filter='float')
+            content.add_widget(make_card("СКОЛЬКО ОТДАЛ (ОТНЯТЬ)", (0.4, 0.8, 1, 1), in_pay))
         content.add_widget(make_card("ДОЛГ / МИНУС", (1.0, 0.843, 0.251, 1), in_d))
 
         if not is_special_banner and not c.get('is_creditor'):
@@ -3989,7 +4012,11 @@ class ClientsScreen(Screen):
                 return
             pop.is_dismissing_flag = True
             new_name = in_n.text.strip() if (not is_special_banner and in_n) else None
-            ok, message = change_balance(app, c, in_d.text, name=new_name)
+            paid = safe_float(in_pay.text) if in_pay is not None else 0.0
+            if paid > 0:
+                ok, message = change_balance(app, c, payment_result(c.get('debt', '0'), paid), name=new_name, op='оплата')
+            else:
+                ok, message = change_balance(app, c, in_d.text, name=new_name)
             if not ok:
                 pop.is_dismissing_flag = False
                 self._stub_popup('КЛИЕНТ', message)
@@ -4115,10 +4142,12 @@ class ClientsScreen(Screen):
         content = BoxLayout(orientation='vertical', spacing=8, padding=[10, 10, 10, 10])
         pop = TopMenuPopup(title=f"ИСПРАВИТЬ: {client.get('name', '').upper()}", content=content, size_hint=(0.97, 0.95))
         hint = Label(text="[color=#AAB4C8]Нажмите на позицию, чтобы исправить[/color]", markup=True,
-                     font_size='15sp', size_hint_y=None, height=34)
+                     font_size='15sp', size_hint_y=None, height=34, halign='center', valign='middle')
+        hint.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)),
+                  texture_size=lambda s_, ts: setattr(s_, 'height', ts[1] + 10))
         content.add_widget(hint)
         scroll = ScrollView()
-        lst = GridLayout(cols=1, spacing=6, size_hint_y=None, padding=[0, 4, 0, 10])
+        lst = GridLayout(cols=1, spacing=12, size_hint_y=None, padding=[0, 4, 0, 10])
         lst.bind(minimum_height=lst.setter('height'))
         scroll.add_widget(lst)
         content.add_widget(scroll)
@@ -4138,17 +4167,16 @@ class ClientsScreen(Screen):
             lst.add_widget(Label(text="История пуста", font_size='17sp', size_hint_y=None, height=80))
         for d in sorted(groups, key=_key, reverse=True):
             day_lbl = Label(text=f"[b][color=#AABBFF]{d}[/color][/b]", markup=True, font_size='16sp',
-                            size_hint_y=None, height=38, halign='left', valign='middle')
-            day_lbl.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+                            size_hint_y=None, height=38, halign='left', valign='bottom')
+            day_lbl.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)),
+                         texture_size=lambda s_, ts: setattr(s_, 'height', ts[1] + 24))
             lst.add_widget(day_lbl)
             for n, h in enumerate(groups[d], 1):
                 desc = str(h.get('desc') or '').replace('Заказ:', '').strip()
                 pr = f" [color=#FF6666]{format_num_simple(h.get('price'))}р/м2[/color]" if h.get('price') else ''
-                b = RoundedButton(text=f"{n}) {desc}{pr}  [color=#00FF00]= {rub(h.get('sum'))} р[/color]  {h.get('badge') or ''}",
-                                  markup=True, bg_color=(0.12, 0.15, 0.21, 1), size_hint_y=None, height=58,
-                                  font_size='14sp', radius=12)
+                b = TapTextRow(text=f"{n}) {desc}{pr}  [color=#00FF00]=\u00a0{rub(h.get('sum')).replace(' ', chr(160))}\u00a0р[/color]  [color=#8A8A8A]{h.get('badge') or ''}[/color]",
+                               font_size='15sp')
                 b.bind(on_release=lambda x, it=h: self.safe_transition(pop, self.show_order_item_edit, client, it))
-                b.bind(size=lambda s_, v: setattr(s_, 'text_size', (v[0] - 20, None)))
                 lst.add_widget(b)
 
         def _back():
