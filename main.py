@@ -1676,11 +1676,13 @@ class ClientsScreen(Screen):
         cclick.bind(pos=lambda *a: self._draw_tap_bg(cclick),
                     size=lambda *a: self._draw_tap_bg(cclick),
                     state=lambda *a: self._draw_tap_bg(cclick))
-        cbtn = RoundedButton(text="ОТДАЛ", bg_color=(0.18, 0.48, 0.86, 1), size_hint=(None, 1), width=378,
-                             radius=16, font_size='20sp', bold=True)
-        cbtn.bind(on_release=lambda x: self.show_current_profit_popup())
+        chist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=156, radius=16, font_size='18sp', bold=True)
+        chist.bind(on_release=lambda x: self.show_current_profit_history())
+        cedit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, 1), width=216, radius=16)
+        cedit.bind(on_release=lambda x: self.show_current_profit_popup())
         r3.add_widget(cclick)
-        r3.add_widget(cbtn)
+        r3.add_widget(chist)
+        r3.add_widget(cedit)
         card.add_widget(r3)
         return card
 
@@ -1688,7 +1690,7 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         if not app:
             return
-        content = BoxLayout(orientation='vertical', spacing=12, padding=20)
+        content = BoxLayout(orientation='vertical', spacing=10, padding=[18, 10, 18, 14])
         pop = TopMenuPopup(title="ТЕКУЩАЯ ПРИБЫЛЬ", content=content, size_hint=(0.94, 0.85))
         info = Label(text="", markup=True, font_size='18sp', size_hint_y=None, height=120, halign='center', valign='middle')
         info.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)),
@@ -1696,52 +1698,91 @@ class ClientsScreen(Screen):
         content.add_widget(info)
 
         def show_info():
-            info.text = (f"[b]общая: [color=#8FE6B0]{rub(app.get_totals()[3])} р[/color][/b]\n"
-                         f"[b]текущая: [color=#5FD3FF]{rub(app.current_profit())} р[/color][/b]")
+            info.text = (f"[color=#AAB4C8]общая:[/color] [b][color=#8FE6B0]{rub(app.get_totals()[3])} р[/color][/b]\n"
+                         f"[color=#AAB4C8]текущая:[/color] [b][color=#5FD3FF]{rub(app.current_profit())} р[/color][/b]")
         show_info()
-        f_amt, in_amt = self._labeled_field("СКОЛЬКО ОТДАЛ, руб", "0")
+        f_amt, in_amt = self._labeled_field("СУММА, руб", "0")
         f_amt.size_hint_y = None
         f_amt.height = 130
         content.add_widget(f_amt)
-        row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=80)
-        b_take = RoundedButton(text="ОТДАЛ", bg_color=(0.18, 0.48, 0.86, 1), bold=True, font_size='17sp', radius=16)
+        cap = Label(text="[b]ЗА ЧТО / КОМУ[/b]", markup=True, font_size='14sp', color=(0.78, 0.82, 0.88, 1),
+                    size_hint_y=None, height=30, halign='center', valign='middle')
+        cap.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        content.add_widget(cap)
+        in_note = TextInput(multiline=False, font_size='18sp', size_hint_y=None, height=84,
+                            hint_text="например: забрал себе, Олегу за краску",
+                            background_normal='', background_active='', background_color=(0.11, 0.13, 0.19, 1),
+                            foreground_color=(1, 1, 1, 1), cursor_color=(0.2, 0.75, 0.84, 1), padding=[12, 22, 12, 10])
+        content.add_widget(in_note)
+        row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=80)
+        b_take = RoundedButton(text="− ВЫЧЕСТЬ", bg_color=(0.18, 0.48, 0.86, 1), bold=True, font_size='17sp', radius=16)
+        b_set = RoundedButton(text="СДЕЛАТЬ =", bg_color=(0.25, 0.32, 0.45, 1), bold=True, font_size='17sp', radius=16)
         b_reset = RoundedButton(text="ОБНУЛИТЬ", bg_color=(0.32, 0.36, 0.44, 1), bold=True, font_size='17sp', radius=16)
-        row.add_widget(b_take); row.add_widget(b_reset)
+        row.add_widget(b_take); row.add_widget(b_set); row.add_widget(b_reset)
         content.add_widget(row)
-        hist_lbl = Label(text="", markup=True, font_size='14sp', halign='left', valign='top')
-        hist_lbl.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
-        content.add_widget(hist_lbl)
+        hint = Label(text="[color=#7A8494]ВЫЧЕСТЬ — текущая меньше на сумму · СДЕЛАТЬ = — текущая станет равна сумме · общая не меняется[/color]",
+                     markup=True, font_size='12sp', size_hint_y=None, height=60, halign='center', valign='top')
+        hint.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)))
+        content.add_widget(hint)
 
-        def show_hist():
-            takes = list(getattr(app, 'profit_takes', []) or [])[-8:]
-            if not takes:
-                hist_lbl.text = "[color=#7A8494]Пока ничего не отдано[/color]"
+        def run(**kw):
+            ok, msg = app.take_profit(note=in_note.text, **kw)
+            if not ok:
+                self._stub_popup('ТЕКУЩАЯ ПРИБЫЛЬ', msg)
                 return
-            lines = ["[color=#AAB4C8]Последние:[/color]"]
-            for t in reversed(takes):
-                lines.append(f"{t.get('date', '')}   {t.get('kind', '')}  [color=#5FD3FF]{rub(t.get('amount', 0))} р[/color]")
-            hist_lbl.text = "\n".join(lines)
-        show_hist()
-
-        def after():
-            show_info(); show_hist(); in_amt.text = ''
+            in_amt.text = ''
+            in_note.text = ''
+            show_info()
             self.refresh_list()
 
-        def do_take(x):
-            ok, msg = app.take_profit(in_amt.text)
-            if not ok:
-                self._stub_popup('ТЕКУЩАЯ ПРИБЫЛЬ', msg)
-                return
-            after()
+        b_take.bind(on_release=lambda x: run(amount=in_amt.text))
+        b_set.bind(on_release=lambda x: run(set_to=in_amt.text))
+        b_reset.bind(on_release=lambda x: run(reset=True))
+        content.add_widget(Widget())
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
 
-        def do_reset(x):
-            ok, msg = app.take_profit(reset=True)
-            if not ok:
-                self._stub_popup('ТЕКУЩАЯ ПРИБЫЛЬ', msg)
+    def show_current_profit_history(self, *args):
+        app = App.get_running_app()
+        if not app:
+            return
+        content = BoxLayout(orientation='vertical', spacing=10, padding=[14, 10, 14, 14])
+        pop = TopMenuPopup(title="ИСТОРИЯ ТЕКУЩЕЙ", content=content, size_hint=(0.96, 0.92))
+        scroll = ScrollView()
+        grid = GridLayout(cols=1, spacing=8, size_hint_y=None, padding=[2, 4, 2, 8])
+        grid.bind(minimum_height=grid.setter('height'))
+        scroll.add_widget(grid)
+        content.add_widget(scroll)
+
+        def fill():
+            grid.clear_widgets()
+            takes = list(getattr(app, 'profit_takes', []) or [])
+            if not takes:
+                grid.add_widget(Label(text="[color=#7A8494]Пока ничего не вычитали[/color]", markup=True,
+                                      font_size='16sp', size_hint_y=None, height=90))
                 return
-            after()
-        b_take.bind(on_release=do_take)
-        b_reset.bind(on_release=do_reset)
+            for e in reversed(takes):
+                amt = safe_float(e.get('amount'))
+                sign = '−' if amt >= 0 else '+'
+                note = f"\n[color=#FFFFFF]{escape_markup(e['note'])}[/color]" if e.get('note') else ''
+                txt = (f"[color=#AAB4C8]{e.get('date', '')}  {e.get('kind', '')}[/color]   "
+                       f"[b][color=#5FD3FF]{sign}{rub(abs(amt))} р[/color][/b]{note}")
+                row = BoxLayout(orientation='horizontal', spacing=8, size_hint_y=None, height=70)
+                lbl = TapTextRow(text=txt, font_size='14sp')
+                lbl.bind(height=lambda w, h, r=row: setattr(r, 'height', h))
+                x = RoundedButton(text="X", bg_color=(0.8, 0.2, 0.2, 1), size_hint_x=None, width=60, radius=12)
+                x.bind(on_release=lambda b, ent=e: undo(ent))
+                row.add_widget(lbl); row.add_widget(x)
+                grid.add_widget(row)
+
+        def undo(ent):
+            ok, msg = app.undo_take(ent)
+            if not ok:
+                self._stub_popup('ИСТОРИЯ ТЕКУЩЕЙ', msg)
+                return
+            fill()
+            self.refresh_list()
+        fill()
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
@@ -4934,32 +4975,57 @@ class BusinessApp(App):
         """Текущая прибыль = общая минус всё, что отдано («ОТДАЛ»). Общая не меняется."""
         return round(self.get_totals()[3] - safe_float(getattr(self, 'profit_taken', '0')), 2)
 
-    def take_profit(self, amount=None, reset=False):
-        """«ОТДАЛ» сумму из текущей прибыли или «ОБНУЛИТЬ» текущую. Всё или ничего."""
+    def take_profit(self, amount=None, reset=False, set_to=None, note=''):
+        """Текущая прибыль: «ВЫЧЕСТЬ» сумму, «СДЕЛАТЬ =» точное значение или «ОБНУЛИТЬ».
+        Каждая запись хранит, на сколько изменилось «отдано» (delta), — её можно удалить. Всё или ничего."""
         old_taken = getattr(self, 'profit_taken', '0')
         old_takes = list(getattr(self, 'profit_takes', []) or [])
         cur = self.current_profit()
         if reset:
-            amount = cur
-            kind = 'обнулено'
+            delta, kind = cur, 'обнулено'
+        elif set_to is not None:
+            txt = str(set_to).strip()
+            if not txt:
+                return False, 'Впишите сумму'
+            delta, kind = round(cur - safe_float(txt), 2), 'исправлено'
         else:
-            amount = round(safe_float(amount), 2)
-            if amount <= 0:
+            delta, kind = round(safe_float(amount), 2), 'вычтено'
+            if delta <= 0:
                 return False, 'Впишите сумму больше 0'
-            kind = 'отдал'
+        if abs(delta) < 0.005:
+            return False, 'Ничего не изменилось'
         try:
-            self.profit_taken = format_num_simple(round(safe_float(old_taken) + amount, 2)).replace(' ', '')
-            self.profit_takes = old_takes + [{'date': datetime.now().strftime('%d.%m.%y %H:%M'),
-                                              'amount': format_num_simple(amount).replace(' ', ''),
-                                              'kind': kind}]
-            self.profit_takes = self.profit_takes[-200:]
-            self._op = f'текущая прибыль: {kind} {amount}'
+            self.profit_taken = format_num_simple(round(safe_float(old_taken) + delta, 2)).replace(' ', '')
+            entry = {'id': uuid.uuid4().hex[:10], 'date': datetime.now().strftime('%d.%m.%y %H:%M'),
+                     'amount': format_num_simple(delta).replace(' ', ''), 'kind': kind}
+            if (note or '').strip():
+                entry['note'] = note.strip()[:200]
+            self.profit_takes = (old_takes + [entry])[-300:]
+            self._op = f'текущая прибыль: {kind} {delta}'
             if self.save_data() is not True:
                 raise OSError('не сохранено')
         except Exception as exc:
             self.profit_taken, self.profit_takes = old_taken, old_takes
             return False, 'Не сохранено, всё как было: ' + str(exc)
         return True, 'Сохранено'
+
+    def undo_take(self, entry):
+        """Удалить запись из истории текущей прибыли — её сумма возвращается."""
+        old_taken = getattr(self, 'profit_taken', '0')
+        old_takes = list(getattr(self, 'profit_takes', []) or [])
+        pos = [k for k, e in enumerate(old_takes) if e is entry]
+        if len(pos) != 1:
+            return False, 'Запись уже удалена'
+        try:
+            self.profit_taken = format_num_simple(round(safe_float(old_taken) - safe_float(entry.get('amount')), 2)).replace(' ', '')
+            self.profit_takes = old_takes[:pos[0]] + old_takes[pos[0] + 1:]
+            self._op = 'текущая прибыль: удалена запись'
+            if self.save_data() is not True:
+                raise OSError('не сохранено')
+        except Exception as exc:
+            self.profit_taken, self.profit_takes = old_taken, old_takes
+            return False, 'Не сохранено, всё как было: ' + str(exc)
+        return True, 'Удалено'
 
     def _has_real_data(self):
         for c in self.clients:

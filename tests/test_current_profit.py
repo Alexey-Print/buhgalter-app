@@ -49,7 +49,7 @@ class CurrentProfitTests(unittest.TestCase):
         self.assertTrue(self.app.take_profit(reset=True)[0])
         self.assertEqual(self.app.current_profit(), 0)
         self.assertEqual(self.app.get_totals()[3], total0 + 20)
-        self.assertEqual([t['kind'] for t in self.app.profit_takes], ['отдал', 'обнулено'])
+        self.assertEqual([t['kind'] for t in self.app.profit_takes], ['вычтено', 'обнулено'])
 
     def test_bad_amount_and_failure(self):
         self.order(100)
@@ -60,6 +60,22 @@ class CurrentProfitTests(unittest.TestCase):
         self.assertFalse(self.app.take_profit('30')[0])
         self.assertEqual(self.app.current_profit(), cur)
         self.assertEqual(self.app.profit_takes, [])
+
+
+class CurrentProfitEditTests(CurrentProfitTests):
+    def test_note_set_and_undo(self):
+        self.order(100)
+        total = self.app.get_totals()[3]
+        self.assertTrue(self.app.take_profit('30', note='Олегу за краску')[0])
+        e = self.app.profit_takes[-1]
+        self.assertEqual(e['note'], 'Олегу за краску')
+        self.assertTrue(self.app.take_profit(set_to='50')[0])          # «СДЕЛАТЬ =»
+        self.assertEqual(self.app.current_profit(), 50)
+        self.assertTrue(self.app.undo_take(e)[0])                       # удалили «вычтено 30» — вернулось
+        self.assertEqual(self.app.current_profit(), 80)
+        self.assertEqual(self.app.get_totals()[3], total)
+        self.assertFalse(self.app.undo_take(e)[0])                      # второй раз нельзя
+        self.assertFalse(self.app.take_profit(set_to='')[0])
 
 
 if __name__ == '__main__':
