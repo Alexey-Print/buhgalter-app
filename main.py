@@ -2086,12 +2086,31 @@ class ClientsScreen(Screen):
             self.refresh_list()
             refresh_history_view(date_str)
 
+        def add_to_day(day_str):
+            # Дописать забытую позицию в заказ прошлого дня: обычный расчёт, но с этой датой
+            targets = [i for i, c in enumerate(app.clients) if c is client]
+            if len(targets) != 1:
+                return
+            self._order_date_override = day_str
+            for p_ in list(_open_lists):
+                try:
+                    p_.dismiss()
+                except Exception:
+                    pass
+            _open_lists.clear()
+            pop.is_dismissing_flag = True
+            pop.dismiss()
+            Clock.schedule_once(lambda dt: self.show_client_choice_menu(targets[0]), 0.2)
+
+        _open_lists = []
+
         def show_all_orders_popup():
             all_content = BoxLayout(orientation='vertical', spacing=10, padding=[12, 12, 12, 12])
             all_pop = TopMenuPopup(
                 title=f"ВСЕ ЗАКАЗЫ: {client.get('name', '').upper()}",
                 content=all_content, size_hint=(0.97, 0.95)
             )
+            _open_lists.append(all_pop)
 
             grand_total = safe_float(client.get('debt', '0'))
 
@@ -2141,13 +2160,21 @@ class ClientsScreen(Screen):
                     items_for_day = date_groups[d_str]
                     day_total = sum(safe_float(it.get('sum', 0)) for it in items_for_day)
 
+                    hdr_row = BoxLayout(orientation='horizontal', size_hint_y=None, height=48, spacing=8)
                     hdr = Label(
                         text=f"[b][color=#AABBFF]  {d_str}[/color]   [color=#00FF88]+ {rub(day_total)} р[/color][/b]",
-                        markup=True, font_size='17sp', halign='left', valign='middle',
-                        size_hint_y=None, height=44
+                        markup=True, font_size='17sp', halign='left', valign='middle'
                     )
                     hdr.bind(size=lambda s, v: setattr(s, 'text_size', v))
-                    all_list.add_widget(hdr)
+                    hdr_row.add_widget(hdr)
+                    if not client.get('is_creditor'):
+                        btn_add_day = RoundedButton(
+                            text="+ ДОБАВИТЬ", bg_color=(0.2, 0.6, 0.4, 1),
+                            size_hint_x=None, width=170, font_size='14sp', bold=True, radius=12
+                        )
+                        btn_add_day.bind(on_release=lambda x, d=d_str: add_to_day(d))
+                        hdr_row.add_widget(btn_add_day)
+                    all_list.add_widget(hdr_row)
                     copy_lines.append(f"\n{d_str}  (+{rub(day_total)} р):")
 
                     counter = 1
@@ -2899,6 +2926,7 @@ class ClientsScreen(Screen):
         if not app:
             return
         c = app.clients[idx]
+        self._order_date_override = None
         if c.get('is_creditor'):
             self.show_malevich_main_menu(idx)
         else:
@@ -3045,6 +3073,8 @@ class ClientsScreen(Screen):
         if not app:
             return
         c_name = app.clients[idx].get('name', '').upper()
+        if getattr(self, '_order_date_override', None):
+            c_name = f"{c_name}  ·  ЗА {self._order_date_override}"
         content = BoxLayout(orientation='vertical', spacing=12, padding=15)
         pop = TopMenuPopup(title=c_name, content=content, size_hint=(0.95, 0.92))
         state = {'creditor_idx': creditor_idx}
@@ -3399,6 +3429,11 @@ class ClientsScreen(Screen):
         lbl_cl1 = Label(text=f"[size=16sp][color=#7FB0FF]КЛИЕНТ:[/color][/size]  [size=21sp][b][color=#FFFFFF]{c_name}[/color][/b][/size]", markup=True, size_hint_y=None, height=54, halign='center', valign='middle', shorten=False)
         lbl_cl1.bind(size=lambda s, v: setattr(s, 'text_size', (None, v[1])))
         card_client.add_widget(lbl_cl1)
+        _odate = getattr(self, '_order_date_override', None)
+        if _odate:
+            lbl_odate = Label(text=f"[size=18sp][b][color=#FFD54F]ДОПИСЬ В ЗАКАЗ ЗА {_odate}[/color][/b][/size]", markup=True, size_hint_y=None, height=44, halign='center', valign='middle')
+            lbl_odate.bind(size=lambda s, v: setattr(s, 'text_size', (None, v[1])))
+            card_client.add_widget(lbl_odate)
         if via_malevich:
             lbl_cl2 = Label(text=f"[size=16sp][color=#FFD54F]печать через:[/color][/size]  [size=21sp][b][color=#FFFFFF]{cr_name}[/color][/b][/size]", markup=True, size_hint_y=None, height=54, halign='center', valign='middle', shorten=False)
             lbl_cl2.bind(size=lambda s, v: setattr(s, 'text_size', (None, v[1])))
@@ -3712,9 +3747,11 @@ class ClientsScreen(Screen):
             if 'history' not in c: c['history'] = []
             total_deducted = 0.0
             _oid = uuid.uuid4().hex
+            _odate = getattr(self, '_order_date_override', None)
             hist_item = {
                 'oid': _oid,
-                'date': datetime.now().strftime("%d.%m.%y %H:%M"),
+                'date': (f"{_odate} {datetime.now().strftime('%H:%M')}" if _odate
+                         else datetime.now().strftime("%d.%m.%y %H:%M")),
                 'desc': order_desc or f"Заказ: {mode.replace('_', ' ')}",
                 'sum': format_num_simple(val),
                 'print_cost': print_cost,
