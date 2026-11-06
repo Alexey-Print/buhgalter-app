@@ -3277,14 +3277,14 @@ class ClientsScreen(Screen):
                     b.border_color = list(GR_BORDER)
                     b.text = f"[b]{b.base_text}[/b]"
             if is_selected:
-                btn_add.height = 0
-                btn_add.opacity = 0
-                spacer_add.height = 0
+                btn_add.height = 96          # «+ Добавить имя» видна всегда
+                btn_add.opacity = 1
+                spacer_add.height = 18
                 mid_arrow_w.height = 55
                 mid_arrow_w.opacity = 1
                 anim_arrow.start(mid_arrow_w)
             else:
-                btn_add.height = 100
+                btn_add.height = 96
                 btn_add.opacity = 1
                 spacer_add.height = 25
                 Animation.cancel_all(mid_arrow_w)
