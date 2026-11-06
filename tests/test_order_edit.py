@@ -80,3 +80,32 @@ class OrderEditTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TaxiTests(OrderEditTests):
+    def taxi(self, paid, bill):
+        idx = self.app.clients.index(self.sasha)
+        self.assertTrue(self.s._final_save(idx, money(bill) + ' руб', None, 'taxi', print_cost=paid,
+                        order_desc='Такси', badge='[ТАКСИ]'))
+        return self.sasha['history'][-1]
+
+    def test_taxi_profit_and_reverse(self):
+        from accounting import reverse_order
+        p0 = self.app.get_totals()[3]
+        item = self.taxi(400, 500)
+        self.assertEqual(self.sasha['debt'], money(1500))
+        self.assertEqual(self.oleg['debt'], money(0))
+        self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 100)
+        self.assertTrue(reverse_order(self.app, self.sasha, item)[0])
+        self.assertEqual(self.sasha['debt'], money(1000))
+        self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 0)
+
+    def test_taxi_edit(self):
+        p0 = self.app.get_totals()[3]
+        item = self.taxi(400, 500)
+        ok, msg = self.s.apply_order_edit(self.sasha, item, 700, 450)
+        self.assertTrue(ok, msg)
+        new = self.sasha['history'][-1]
+        self.assertEqual((new['mode'], new['desc'], new['badge']), ('taxi', 'Такси', '[ТАКСИ]'))
+        self.assertEqual(self.sasha['debt'], money(1700))
+        self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 250)

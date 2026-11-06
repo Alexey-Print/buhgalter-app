@@ -3723,10 +3723,74 @@ class ClientsScreen(Screen):
             dop_pop.open()
 
         btn_dop.bind(on_release=on_dop_clicked)
+
+        def on_taxi_clicked(instance):
+            t_pop = TopMenuPopup(title="ТАКСИ", content=BoxLayout(orientation='vertical', spacing=12, padding=20), size_hint=(0.9, 0.7))
+            row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=150)
+            f_paid, in_paid = self._labeled_field("Я ЗАПЛАТИЛ, руб", "0")
+            f_bill, in_bill = self._labeled_field("КЛИЕНТУ, руб", "0")
+            row.add_widget(f_paid); row.add_widget(f_bill)
+            t_pop.content.add_widget(row)
+            t_info = Label(text="", markup=True, font_size='17sp', size_hint_y=None, height=130, halign='center', valign='middle')
+            t_info.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+            t_pop.content.add_widget(t_info)
+
+            def t_vals():
+                paid = safe_float(in_paid.text)
+                bill = safe_float(in_bill.text) if in_bill.text.strip() else paid
+                return paid, bill
+
+            def t_show(*a):
+                paid, bill = t_vals()
+                t_info.text = (f"[b]в долг клиенту: [color=#00FF00]{rub(bill)} р[/color][/b]\n"
+                               f"прибыль: [color=#FFD54F]{rub(bill - paid)} р[/color]")
+            in_paid.bind(text=t_show); in_bill.bind(text=t_show); t_show()
+
+            def save_taxi(x):
+                if not resolve_targets():
+                    return
+                paid, bill = t_vals()
+                if bill <= 0 or paid < 0:
+                    return
+                if getattr(t_pop, 'is_dismissing_flag', False): return
+                t_pop.is_dismissing_flag = True
+                # print_cost = сколько я заплатил таксисту -> в прибыль идёт только разница
+                saved_ok = self._final_save(idx, f"{format_num_simple(bill)} руб", instance, "taxi",
+                                            print_cost=paid, via_malevich=False, creditor_idx=None,
+                                            order_desc="Такси", price=None, badge="[ТАКСИ]", print_price=0.0)
+                if not saved_ok:
+                    t_pop.dismiss()
+                    return
+                self.order_total_accumulator += bill
+                btn_total_order.text = f"СУММА ЗАКАЗА:\n{rub(self.order_total_accumulator)} руб"
+                self.raw_history_lines.append({'oid': app.clients[idx]['history'][-1].get('oid'), 'num': self.history_counter + 1, 'l': '', 'w': '', 'c': '1',
+                                               'sum': format_num_simple(bill), 'mode': 'taxi', 'price': None,
+                                               'print_cost': paid, 'via_malevich': False,
+                                               'creditor_name': None, 'client_idx': idx, 'banner_deduction': 0.0})
+                _add_order_row(format_num_simple(bill),
+                               f"[b]Такси[/b]  [color=#00FF00]= {format_num_simple(bill)}[/color]", "ТАКСИ")
+                t_pop.dismiss()
+
+            btn_save_t = RoundedButton(text="ДОБАВИТЬ В ЗАКАЗ", bg_color=(0.2, 0.6, 0.4, 1), height=90, size_hint_y=None, bold=True)
+            btn_save_t.bind(on_release=save_taxi)
+            t_pop.content.add_widget(btn_save_t)
+            t_pop.content.add_widget(Widget())
+            t_pop.content.add_widget(self.get_bottom_buttons(t_pop, cancel_text="ОТМЕНА"))
+            t_pop.open()
+
+        extras_row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=110)
+        btn_dop.size_hint_x = 0.62
+        btn_dop.font_size = '15sp'
+        extras_row.add_widget(btn_dop)
+        if not app.clients[idx].get('is_creditor'):
+            btn_taxi = RoundedButton(text="+ ТАКСИ", bg_color=(0.85, 0.65, 0.1, 1), bold=True,
+                                     size_hint_y=None, height=110, size_hint_x=0.38, font_size='18sp')
+            btn_taxi.bind(on_release=on_taxi_clicked)
+            extras_row.add_widget(btn_taxi)
         btn_s.bind(on_release=on_add_to_debt_clicked)
         btn_add.bind(on_release=on_add_to_debt_clicked, on_long_press=on_add_material_clicked)
         _gap = lambda: Widget(size_hint_y=None, height=12)
-        for w in (card_client, _gap(), card_mat, _gap(), card_size, _gap(), card_calc, btn_box, btn_dop, Widget(size_hint_y=None, height=15), total_box, history_header, history_layout, Widget(size_hint_y=None, height=20), self.get_bottom_buttons(pop, prev_cb, cancel_text="ЗАКРЫТЬ"), Widget(size_hint_y=None, height=350)):
+        for w in (card_client, _gap(), card_mat, _gap(), card_size, _gap(), card_calc, btn_box, extras_row, Widget(size_hint_y=None, height=15), total_box, history_header, history_layout, Widget(size_hint_y=None, height=20), self.get_bottom_buttons(pop, prev_cb, cancel_text="ЗАКРЫТЬ"), Widget(size_hint_y=None, height=350)):
             content.add_widget(w)
         scroll.add_widget(content); pop.open()
 
@@ -3992,7 +4056,7 @@ class ClientsScreen(Screen):
             self._order_date_override = old_date.split(' ')[0] or None
             idx = [i for i, x in enumerate(app.clients) if x is client][0]
             if not self._final_save(idx, f"{format_num_simple(new_sum)} руб", None, mode,
-                                    print_cost=new_cost if via else 0.0, via_malevich=via,
+                                    print_cost=new_cost if (via or mode == 'taxi') else 0.0, via_malevich=via,
                                     creditor_idx=cr, order_desc=desc or item.get('desc'),
                                     price=price if price is not None else item.get('price'),
                                     badge=item.get('badge'), print_price=print_price):
@@ -4081,7 +4145,8 @@ class ClientsScreen(Screen):
             return
         via = bool(item.get('via_malevich'))
         m = self._ORDER_RE.match(str(item.get('desc') or ''))
-        sized = bool(m) and item.get('mode') != 'dop'
+        is_taxi = item.get('mode') == 'taxi'
+        sized = bool(m) and item.get('mode') not in ('dop', 'taxi')
         content = BoxLayout(orientation='vertical', spacing=10, padding=[14, 10, 14, 10])
         pop = TopMenuPopup(title=f"ПОЗИЦИЯ ЗА {(item.get('date') or '').split(' ')[0]}", content=content, size_hint=(0.95, 0.9))
         fields = {}
@@ -4108,8 +4173,8 @@ class ClientsScreen(Screen):
             f, inp = self._labeled_field("СУММА, руб", "0", format_num_simple(item.get('sum')))
             fields['s'] = inp
             row.add_widget(f)
-            if via:
-                f, inp = self._labeled_field("ИСПОЛНИТЕЛЮ, руб", "0", format_num_simple(item.get('print_cost') or 0))
+            if via or is_taxi:
+                f, inp = self._labeled_field("ТАКСИ Я ЗАПЛАТИЛ" if is_taxi else "ИСПОЛНИТЕЛЮ, руб", "0", format_num_simple(item.get('print_cost') or 0))
                 fields['k'] = inp
                 row.add_widget(f)
             content.add_widget(row)
@@ -4126,7 +4191,7 @@ class ClientsScreen(Screen):
                 cost = area * safe_float(fields['k'].text) if via else 0.0
             else:
                 total = safe_float(fields['s'].text)
-                cost = safe_float(fields['k'].text) if via else 0.0
+                cost = safe_float(fields['k'].text) if (via or is_taxi) else 0.0
             return total, cost
 
         def show(*a):
@@ -4134,6 +4199,8 @@ class ClientsScreen(Screen):
             t = f"[b]БЫЛО: {rub(item.get('sum'))} р  »  [color=#00FF00]СТАНЕТ: {rub(total)} р[/color][/b]"
             if via:
                 t += f"\n[color=#FFD54F]исполнителю: {rub(cost)} р[/color]"
+            elif is_taxi:
+                t += f"\n[color=#FFD54F]прибыль: {rub(total - cost)} р[/color]"
             res.text = t
         for inp in fields.values():
             inp.bind(text=show)
