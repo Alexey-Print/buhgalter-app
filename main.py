@@ -1817,6 +1817,46 @@ class ClientsScreen(Screen):
         pop.content.add_widget(self.get_bottom_buttons(pop, cancel_text="\u0417\u0410\u041a\u0420\u042b\u0422\u042c"))
         pop.open()
 
+    def confirm_global_reset(self, parent_pop=None):
+        app = App.get_running_app()
+        if not app:
+            return
+        p_conf = AppPopup(title="ВНИМАНИЕ! СБРОС ВСЕГО!", content=BoxLayout(orientation='vertical', spacing=20, padding=20), size_hint=(0.85, 0.5))
+        btn_yes = RoundedButton(text="ДА, СБРОСИТЬ ВСЕ", bg_color=(0.8, 0.2, 0.2, 1), height=100, size_hint_y=None, bold=True)
+
+        def on_yes_global(x):
+            if getattr(p_conf, 'is_dismissing_flag', False): return
+            p_conf.is_dismissing_flag = True
+            try:
+                app.write_verified_backup()
+            except Exception as exc:
+                p_conf.is_dismissing_flag = False
+                self._stub_popup('СБРОС', 'Сброс не выполнен: не удалось сделать резервную копию. ' + str(exc))
+                return
+            snap = snapshot(app)
+            for c in app.clients:
+                c.update({'debt': '0', 'zakupka_total': '0', 'history': []})
+            app.profit_correction = '0'
+            _old_taken = (getattr(app, 'profit_taken', '0'), list(getattr(app, 'profit_takes', []) or []))
+            app.profit_taken, app.profit_takes = '0', []
+            ok, message = commit(app, snap, 'общий сброс')
+            if not ok:
+                app.profit_taken, app.profit_takes = _old_taken
+                p_conf.is_dismissing_flag = False
+                self._stub_popup('СБРОС', message)
+                return
+            self.refresh_list()
+            p_conf.dismiss()
+            if parent_pop is not None and not getattr(parent_pop, 'is_dismissing_flag', False):
+                parent_pop.is_dismissing_flag = True
+                parent_pop.dismiss()
+
+        btn_yes.bind(on_release=on_yes_global)
+        p_conf.content.add_widget(Label(text="Вы уверены, что хотите обнулить\nдолги ВСЕХ клиентов, истории\nи всю чистую прибыль?", halign='center'))
+        p_conf.content.add_widget(btn_yes)
+        p_conf.content.add_widget(self.get_bottom_buttons(p_conf, cancel_text="ОТМЕНА"))
+        p_conf.open()
+
     def show_reports_stub(self, *args):
         self.show_reports_popup()
 
@@ -1910,6 +1950,37 @@ class ClientsScreen(Screen):
         content.add_widget(stat_row("ОБОРОТ (клиенты)", f"{rub(total_revenue)} р", "#8FD3FF"))
         content.add_widget(stat_row("ОТДАНО ЗА ПЕЧАТЬ", f"{rub(paid_to_print)} р", "#FF8A80"))
         content.add_widget(stat_row("ЗАКУПКА БАНЕРОВ", f"{rub(banner_purchases)} р", "#FF8A80"))
+
+        # ── ДАННЫЕ: копия базы, загрузка, общий сброс ──
+        content.add_widget(Widget(size_hint_y=None, height=14))
+        data_box = BoxLayout(orientation='vertical', spacing=10, padding=[16, 12, 16, 16], size_hint_y=None, height=330)
+        def _draw_data_box(w, *a):
+            w.canvas.before.clear()
+            with w.canvas.before:
+                Color(1, 0.84, 0.31, 1)
+                Line(rounded_rectangle=(w.x + 1, w.y + 1, w.width - 2, w.height - 2, 18), width=1.6)
+        data_box.bind(pos=_draw_data_box, size=_draw_data_box)
+        d_title = Label(text="[b][color=#FFD54F]ДАННЫЕ[/color][/b]", markup=True, font_size='18sp',
+                        size_hint_y=None, height=44, halign='center', valign='middle')
+        d_title.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        data_box.add_widget(d_title)
+        transfer_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=90)
+        btn_export = RoundedButton(text="ЭКСПОРТ", bg_color=(0.15, 0.45, 0.7, 1), bold=True, font_size='19sp')
+        btn_export.bind(on_release=lambda x: self.export_database())
+        btn_import = RoundedButton(text="ИМПОРТ", bg_color=(0.35, 0.3, 0.6, 1), bold=True, font_size='19sp')
+        btn_import.bind(on_release=lambda x: self.start_import())
+        transfer_row.add_widget(btn_export)
+        transfer_row.add_widget(btn_import)
+        data_box.add_widget(transfer_row)
+        d_hint = Label(text="[color=#AAB4C8]копия всех данных в файл / загрузка из файла[/color]", markup=True,
+                       font_size='13sp', size_hint_y=None, height=40, halign='center', valign='middle')
+        d_hint.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        data_box.add_widget(d_hint)
+        btn_global_reset = RoundedButton(text="СБРОС ВСЕХ ДАННЫХ", bg_color=(0.45, 0.08, 0.08, 1),
+                                         height=90, size_hint_y=None, bold=True, font_size='19sp')
+        btn_global_reset.bind(on_release=lambda x: self.confirm_global_reset(pop))
+        data_box.add_widget(btn_global_reset)
+        content.add_widget(data_box)
 
         content.add_widget(Widget(size_hint_y=None, height=10))
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
@@ -2724,59 +2795,6 @@ class ClientsScreen(Screen):
         btn_zero.bind(on_release=lambda x: save_profit(0.0))
         content.add_widget(btn_zero)
 
-        content.add_widget(Widget(size_hint_y=None, height=50))
-
-        btn_global_reset = RoundedButton(text="СБРОС ВСЕХ ДАННЫХ", bg_color=(0.45, 0.08, 0.08, 1),
-                                         height=100, size_hint_y=None, bold=True, font_size='20sp')
-
-        def confirm_global_reset(instance):
-            p_conf = AppPopup(title="ВНИМАНИЕ! СБРОС ВСЕГО!", content=BoxLayout(orientation='vertical', spacing=20, padding=20), size_hint=(0.85, 0.5))
-            btn_yes = RoundedButton(text="ДА, СБРОСИТЬ ВСЕ", bg_color=(0.8, 0.2, 0.2, 1), height=100, size_hint_y=None, bold=True)
-
-            def on_yes_global(x):
-                if getattr(p_conf, 'is_dismissing_flag', False): return
-                p_conf.is_dismissing_flag = True
-                try:
-                    app.write_verified_backup()
-                except Exception as exc:
-                    p_conf.is_dismissing_flag = False
-                    self._stub_popup('СБРОС', 'Сброс не выполнен: не удалось сделать резервную копию. ' + str(exc))
-                    return
-                snap = snapshot(app)
-                for c in app.clients:
-                    c.update({'debt': '0', 'zakupka_total': '0', 'history': []})
-                app.profit_correction = '0'
-                _old_taken = (getattr(app, 'profit_taken', '0'), list(getattr(app, 'profit_takes', []) or []))
-                app.profit_taken, app.profit_takes = '0', []
-                ok, message = commit(app, snap, 'общий сброс')
-                if not ok:
-                    app.profit_taken, app.profit_takes = _old_taken
-                    p_conf.is_dismissing_flag = False
-                    self._stub_popup('СБРОС', message)
-                    return
-                self.refresh_list()
-                p_conf.dismiss()
-                if not getattr(pop, 'is_dismissing_flag', False):
-                    pop.is_dismissing_flag = True
-                    pop.dismiss()
-
-            btn_yes.bind(on_release=on_yes_global)
-            p_conf.content.add_widget(Label(text="Вы уверены, что хотите обнулить\nдолги ВСЕХ клиентов, истории\nи всю чистую прибыль?", halign='center'))
-            p_conf.content.add_widget(btn_yes)
-            p_conf.content.add_widget(self.get_bottom_buttons(p_conf, cancel_text="ОТМЕНА"))
-            p_conf.open()
-
-        btn_global_reset.bind(on_release=confirm_global_reset)
-        transfer_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=90)
-        btn_export = RoundedButton(text="ЭКСПОРТ", bg_color=(0.15, 0.45, 0.7, 1), bold=True, font_size='20sp')
-        btn_export.bind(on_release=lambda x: self.export_database())
-        btn_import = RoundedButton(text="ИМПОРТ", bg_color=(0.35, 0.3, 0.6, 1), bold=True, font_size='20sp')
-        btn_import.bind(on_release=lambda x: self.start_import())
-        transfer_row.add_widget(btn_export)
-        transfer_row.add_widget(btn_import)
-        content.add_widget(transfer_row)
-        content.add_widget(Widget(size_hint_y=None, height=12))
-        content.add_widget(btn_global_reset)
 
         content.add_widget(Widget(size_hint_y=None, height=25))
         bottom_profit = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=110, padding=[15, 0, 15, 0])

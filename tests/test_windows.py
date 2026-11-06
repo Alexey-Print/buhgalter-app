@@ -101,9 +101,20 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(self.messages, [])
 
     def test_export_button(self):
-        self.screen.show_profit_correction_popup()
+        self.screen.show_reports_popup()
         self.press(self.popup(), 'ЭКСПОРТ')
         self.assertIn('Копия базы сохранена', self.messages[-1])
+
+    def test_data_buttons_moved_to_reports(self):
+        from kivy.uix.button import Button
+        self.screen.show_profit_correction_popup()
+        texts = {w.text for w in self.popup().walk() if isinstance(w, Button)}
+        self.assertTrue({'ЭКСПОРТ', 'ИМПОРТ', 'СБРОС ВСЕХ ДАННЫХ'}.isdisjoint(texts))
+        self.assertIn('ОБНУЛИТЬ ПРИБЫЛЬ', texts)
+        self.popup().dismiss()
+        self.screen.show_reports_popup()
+        texts = {w.text for w in self.popup().walk() if isinstance(w, Button)}
+        self.assertTrue({'ЭКСПОРТ', 'ИМПОРТ', 'СБРОС ВСЕХ ДАННЫХ'} <= texts)
 
 
 if __name__ == '__main__':

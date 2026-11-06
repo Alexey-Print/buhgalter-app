@@ -155,7 +155,7 @@ class SavingTests(unittest.TestCase):
 
     # --- step 8: global reset ---
     def open_global_reset(self):
-        self.screen.show_profit_correction_popup()
+        self.screen.show_reports_popup()
         self.press('СБРОС ВСЕХ ДАННЫХ', self.top_popup())
         return self.top_popup()
 
