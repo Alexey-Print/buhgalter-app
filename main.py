@@ -1984,6 +1984,18 @@ class ClientsScreen(Screen):
 
         btn_clear_hist.bind(on_release=confirm_clear_history)
 
+        btn_add_pos = None
+        if not client.get('is_creditor'):
+            btn_add_pos = RoundedButton(text="+ ПОЗИЦИЯ", bg_color=(0.2, 0.6, 0.4, 1),
+                                        size_hint_y=None, height=84, font_size='17sp', bold=True, radius=20)
+            btn_add_pos.bind(on_release=lambda x: add_to_day(current_viewed_date[0]))
+            add_wrap = BoxLayout(orientation='horizontal', size_hint_y=None, height=84)
+            add_wrap.add_widget(Widget(size_hint_x=0.0625))
+            btn_add_pos.size_hint_x = 0.875
+            add_wrap.add_widget(btn_add_pos)
+            add_wrap.add_widget(Widget(size_hint_x=0.0625))
+            popup_content.add_widget(add_wrap)
+
         actions_row = BoxLayout(orientation='horizontal', size_hint_x=0.875, spacing=12)
         actions_row.add_widget(btn_all_orders)
         actions_row.add_widget(btn_clear_hist)
@@ -2006,6 +2018,8 @@ class ClientsScreen(Screen):
 
         def refresh_history_view(date_str):
             current_viewed_date[0] = date_str
+            if btn_add_pos is not None:
+                btn_add_pos.text = f"+ ПОЗИЦИЯ ЗА {date_str}"
             list_layout.clear_widgets()
             filter_btn.set_date(date_str)
             filtered_items = []
