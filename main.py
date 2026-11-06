@@ -67,7 +67,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "2.9"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.0"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
