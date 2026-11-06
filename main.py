@@ -683,12 +683,15 @@ class StatCard(ButtonBehavior, BoxLayout):
 class TapTextRow(ButtonBehavior, Label):
     """Нажимаемая строка текста: высота сама подстраивается под текст (1, 2, 3 строки)."""
     def __init__(self, **kw):
+        self.min_h = kw.pop('min_h', 64)
+        self._fill = kw.pop('fill', (0.12, 0.15, 0.21, 1))
+        self._edge = kw.pop('edge', (0.45, 0.5, 0.6, 0.55))
         kw.setdefault('markup', True)
         kw.setdefault('halign', 'left')
         kw.setdefault('valign', 'middle')
         kw.setdefault('size_hint_y', None)
+        kw.setdefault('height', self.min_h)
         super().__init__(**kw)
-        self.min_h = 64
         self.bind(width=lambda s, v: setattr(s, 'text_size', (v - 24, None)),
                   texture_size=lambda s, ts: setattr(s, 'height', max(s.min_h, ts[1] + 18)),
                   pos=self._bg, size=self._bg, state=self._bg)
@@ -696,9 +699,10 @@ class TapTextRow(ButtonBehavior, Label):
     def _bg(self, *a):
         self.canvas.before.clear()
         with self.canvas.before:
-            Color(*((0.2, 0.26, 0.36, 1) if self.state == 'down' else (0.12, 0.15, 0.21, 1)))
+            f = self._fill
+            Color(*((min(1, f[0] + 0.08), min(1, f[1] + 0.11), min(1, f[2] + 0.15), 1) if self.state == 'down' else f))
             RoundedRectangle(pos=self.pos, size=self.size, radius=[(12, 12)] * 4)
-            Color(0.45, 0.5, 0.6, 0.55)   # тонкая светлая окантовка, не спорит с текстом
+            Color(*self._edge)   # тонкая окантовка
             Line(rounded_rectangle=(self.x + 1, self.y + 1, self.width - 2, self.height - 2, 12), width=1.0)
 
 
@@ -2089,7 +2093,7 @@ class ClientsScreen(Screen):
         list_layout = GridLayout(cols=1, spacing=10, size_hint_y=None, padding=[2, 12, 2, 0])
         list_layout.bind(minimum_height=list_layout.setter('height'))
         scroll.add_widget(list_layout)
-        list_frame = BoxLayout(padding=[10, 10, 10, 10])
+        list_frame = BoxLayout(orientation='vertical', padding=[10, 10, 10, 10], spacing=8)
         def _draw_list_frame(w, *a):
             w.canvas.before.clear()
             with w.canvas.before:
@@ -2097,6 +2101,9 @@ class ClientsScreen(Screen):
                 Line(rounded_rectangle=(w.x + 2, w.y + 2, w.width - 4, w.height - 4, 20), width=2.6)
         list_frame.bind(pos=_draw_list_frame, size=_draw_list_frame)
         list_frame.add_widget(scroll)
+        # комментарий к заказу дня — внизу рамки, всегда на виду
+        note_box = BoxLayout(orientation='vertical', size_hint_y=None, height=0)
+        list_frame.add_widget(note_box)
         popup_content.add_widget(list_frame)
 
         popup_content.add_widget(Widget(size_hint_y=None, height=10))
@@ -2295,16 +2302,22 @@ class ClientsScreen(Screen):
                     row.add_widget(del_btn)
                     list_layout.add_widget(row)
 
-            # комментарий к заказу этого дня
+            # комментарий к заказу этого дня — внизу рамки
+            note_box.clear_widgets()
             _note = str((client.get('notes') or {}).get(date_str) or '').strip()
             if _note:
-                _nt = f"[color=#FFD54F][b]Комментарий:[/b][/color] {escape_markup(_note)}"
+                _nt = f"[color=#FFD54F][b]Комментарий:[/b][/color] [color=#FFFFFF]{escape_markup(_note)}[/color]"
+                note_row = TapTextRow(text=_nt, font_size='15sp', min_h=76,
+                                      fill=(0.24, 0.2, 0.06, 1), edge=(1, 0.84, 0.31, 1))
             else:
-                _nt = "[color=#7A8494]+ комментарий к заказу[/color]"
-            note_row = TapTextRow(text=_nt, font_size='13sp')
+                note_row = TapTextRow(text="[color=#FFD54F][b]+ комментарий к заказу[/b][/color]", font_size='15sp',
+                                      min_h=76, fill=(0.16, 0.14, 0.06, 1), edge=(1, 0.84, 0.31, 0.7))
+                note_row.halign = 'center'
             note_row.bind(on_release=lambda x, d=date_str: self.show_day_note_editor(
                 client, d, lambda: refresh_history_view(d)))
-            list_layout.add_widget(note_row)
+            note_row.bind(height=lambda w, h: setattr(note_box, 'height', h))
+            note_box.add_widget(note_row)
+            note_box.height = note_row.height
 
         def delete_item_callback(item, date_str):
             ok, message = reverse_order(app, client, item)
@@ -4611,12 +4624,30 @@ class ClientsScreen(Screen):
             if on_done:
                 on_done()
 
-        btn = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.6, 0.4, 1), height=90, size_hint_y=None, bold=True)
+        def delete(x):
+            inp.text = ''
+            save(x)
+
+        row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=90)
+        btn = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.6, 0.4, 1), bold=True, font_size='18sp')
         btn.bind(on_release=save)
-        content.add_widget(btn)
+        row.add_widget(btn)
+        if str((client.get('notes') or {}).get(day_str) or '').strip():
+            btn_del = RoundedButton(text="УДАЛИТЬ", bg_color=(0.8, 0.3, 0.3, 1), bold=True, font_size='18sp')
+            btn_del.bind(on_release=delete)
+            row.add_widget(btn_del)
+        content.add_widget(row)
         content.add_widget(Widget())
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ОТМЕНА"))
         pop.open()
+
+        def _to_top(dt):   # показать текст с начала, а не последнюю строку
+            try:
+                inp.cursor = (0, 0)
+                inp.scroll_y = 0
+            except Exception:
+                pass
+        Clock.schedule_once(_to_top, 0.15)
 
     def show_debt_popup(self, idx, prev_cb=None):
         app = App.get_running_app()
