@@ -3895,6 +3895,12 @@ class ClientsScreen(Screen):
                             input_type='number', input_filter='float')
         content.add_widget(make_card("ДОЛГ / МИНУС", (1.0, 0.843, 0.251, 1), in_d))
 
+        if not is_special_banner and not c.get('is_creditor'):
+            btn_orders = RoundedButton(text="ИСПРАВИТЬ ЗАКАЗЫ", bg_color=(0.13, 0.38, 0.7, 1),
+                                       height=98, size_hint_y=None, bold=True, radius=24, font_size='20sp')
+            btn_orders.bind(on_release=lambda x: self.safe_transition(pop, self.show_order_edit_list, c))
+            content.add_widget(btn_orders)
+
         def on_edit_save(instance):
             if getattr(pop, 'is_dismissing_flag', False):
                 return
@@ -3945,6 +3951,217 @@ class ClientsScreen(Screen):
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         content.add_widget(Widget(size_hint_y=None, height=300))
         scroll.add_widget(content)
+        pop.open()
+
+    # ───────── ИСПРАВЛЕНИЕ ПОЗИЦИИ ЗАКАЗА ─────────
+    _ORDER_RE = re.compile(r'^\s*(?:Заказ:)?\s*([\d.,]+)\s*x\s*([\d.,]+)\s+x\s*([\d.,]+)\s*шт')
+
+    def apply_order_edit(self, client, item, new_sum, new_cost, desc=None, price=None, print_price=0.0):
+        """Заменить позицию: отменить старую и записать новую с той же датой и на то же место.
+        Всё или ничего: при любой ошибке данные возвращаются как были."""
+        app = App.get_running_app()
+        if not app:
+            return False, 'Приложение не готово'
+        if new_sum <= 0 or new_cost < 0:
+            return False, 'Сумма должна быть больше 0'
+        hist = client.get('history', [])
+        pos = [i for i, h in enumerate(hist) if h is item]
+        if len(pos) != 1:
+            return False, 'Позиция уже удалена или изменилась'
+        pos = pos[0]
+        old_date = item.get('date') or ''
+        mode = item.get('mode') or 'plenka'
+        via = bool(item.get('via_malevich'))
+        cr = None
+        if via:
+            cands = [i for i, x in enumerate(app.clients) if x.get('is_creditor') and
+                     (x.get('cid') == item.get('creditor_id') if item.get('creditor_id')
+                      else x.get('name') == item.get('creditor_name'))]
+            if len(cands) != 1:
+                return False, 'Исполнитель заказа не найден. Ничего не изменено'
+            cr = cands[0]
+        snap = snapshot(app)
+        old_override = getattr(self, '_order_date_override', None)
+        msgs = []
+        old_stub = self._stub_popup
+        self._stub_popup = lambda t, m: msgs.append(m)
+        try:
+            ok, message = reverse_order(app, client, item)
+            if not ok:
+                return False, message
+            self._order_date_override = old_date.split(' ')[0] or None
+            idx = [i for i, x in enumerate(app.clients) if x is client][0]
+            if not self._final_save(idx, f"{format_num_simple(new_sum)} руб", None, mode,
+                                    print_cost=new_cost if via else 0.0, via_malevich=via,
+                                    creditor_idx=cr, order_desc=desc or item.get('desc'),
+                                    price=price if price is not None else item.get('price'),
+                                    badge=item.get('badge'), print_price=print_price):
+                raise RuntimeError(msgs[-1] if msgs else 'Не сохранено')
+            new_item = hist.pop()
+            new_item['date'] = old_date
+            new_item['edited'] = datetime.now().strftime("%d.%m.%y %H:%M")
+            hist.insert(min(pos, len(hist)), new_item)
+            for x in app.clients:
+                for h in x.get('history', []):
+                    if h.get('source_oid') == new_item['oid']:
+                        h['date'] = old_date
+            for p_ in app.profit_log:
+                if p_.get('oid') == new_item['oid']:
+                    p_['date'] = old_date
+            app._op = 'исправление заказа: ' + str(new_item.get('desc', ''))
+            if app.save_data() is not True:
+                raise OSError('Сохранение не подтверждено')
+        except Exception as exc:
+            restore(app, snap)
+            try:
+                app._op = 'откат исправления заказа'
+                app.save_data()
+            except Exception:
+                pass
+            return False, 'Не сохранено, всё как было: ' + str(exc)
+        finally:
+            self._order_date_override = old_override
+            self._stub_popup = old_stub
+        self.refresh_list()
+        return True, 'Исправлено'
+
+    def show_order_edit_list(self, client, prev_cb=None):
+        app = App.get_running_app()
+        if not app or not any(x is client for x in app.clients):
+            return
+        content = BoxLayout(orientation='vertical', spacing=8, padding=[10, 10, 10, 10])
+        pop = TopMenuPopup(title=f"ИСПРАВИТЬ: {client.get('name', '').upper()}", content=content, size_hint=(0.97, 0.95))
+        hint = Label(text="[color=#AAB4C8]Нажмите на позицию, чтобы исправить[/color]", markup=True,
+                     font_size='15sp', size_hint_y=None, height=34)
+        content.add_widget(hint)
+        scroll = ScrollView()
+        lst = GridLayout(cols=1, spacing=6, size_hint_y=None, padding=[0, 4, 0, 10])
+        lst.bind(minimum_height=lst.setter('height'))
+        scroll.add_widget(lst)
+        content.add_widget(scroll)
+
+        groups = defaultdict(list)
+        for h in client.get('history') or []:
+            if h:
+                groups[(h.get('date') or '').split(' ')[0]].append(h)
+
+        def _key(d):
+            try:
+                a, b, y = d.split('.')
+                return (int(y), int(b), int(a))
+            except Exception:
+                return (0, 0, 0)
+        if not groups:
+            lst.add_widget(Label(text="История пуста", font_size='17sp', size_hint_y=None, height=80))
+        for d in sorted(groups, key=_key, reverse=True):
+            day_lbl = Label(text=f"[b][color=#AABBFF]{d}[/color][/b]", markup=True, font_size='16sp',
+                            size_hint_y=None, height=38, halign='left', valign='middle')
+            day_lbl.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+            lst.add_widget(day_lbl)
+            for n, h in enumerate(groups[d], 1):
+                desc = str(h.get('desc') or '').replace('Заказ:', '').strip()
+                pr = f" [color=#FF6666]{format_num_simple(h.get('price'))}р/м2[/color]" if h.get('price') else ''
+                b = RoundedButton(text=f"{n}) {desc}{pr}  [color=#00FF00]= {rub(h.get('sum'))} р[/color]  {h.get('badge') or ''}",
+                                  markup=True, bg_color=(0.12, 0.15, 0.21, 1), size_hint_y=None, height=58,
+                                  font_size='14sp', radius=12)
+                b.bind(on_release=lambda x, it=h: self.safe_transition(pop, self.show_order_item_edit, client, it))
+                b.bind(size=lambda s_, v: setattr(s_, 'text_size', (v[0] - 20, None)))
+                lst.add_widget(b)
+
+        def _back():
+            pos = [i for i, x in enumerate(app.clients) if x is client]
+            if len(pos) == 1:
+                self.show_edit_popup(pos[0])
+        content.add_widget(self.get_bottom_buttons(pop, prev_cb=_back, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
+
+    def show_order_item_edit(self, client, item):
+        app = App.get_running_app()
+        if not app:
+            return
+        via = bool(item.get('via_malevich'))
+        m = self._ORDER_RE.match(str(item.get('desc') or ''))
+        sized = bool(m) and item.get('mode') != 'dop'
+        content = BoxLayout(orientation='vertical', spacing=10, padding=[14, 10, 14, 10])
+        pop = TopMenuPopup(title=f"ПОЗИЦИЯ ЗА {(item.get('date') or '').split(' ')[0]}", content=content, size_hint=(0.95, 0.9))
+        fields = {}
+        if sized:
+            old_area = safe_float(m.group(1)) * safe_float(m.group(2)) * safe_float(m.group(3), 1)
+            old_cost_m2 = (safe_float(item.get('print_cost')) / old_area) if (via and old_area > 0) else 0.0
+            row1 = BoxLayout(orientation='horizontal', spacing=8, size_hint_y=None, height=150)
+            for key, cap, val in (('l', "ДЛИНА, м", m.group(1)), ('w', "ШИРИНА, м", m.group(2)), ('c', "КОЛ-ВО, шт", m.group(3))):
+                f, inp = self._labeled_field(cap, "0", val.replace(',', '.'))
+                fields[key] = inp
+                row1.add_widget(f)
+            content.add_widget(row1)
+            row2 = BoxLayout(orientation='horizontal', spacing=8, size_hint_y=None, height=150)
+            f, inp = self._labeled_field("ЦЕНА, р/м2", "0", format_num_simple(item.get('price') or 0))
+            fields['p'] = inp
+            row2.add_widget(f)
+            if via:
+                f, inp = self._labeled_field(f"{str(item.get('creditor_name') or 'ИСП.').upper()}, р/м2", "0", format_num_simple(round(old_cost_m2, 2)))
+                fields['k'] = inp
+                row2.add_widget(f)
+            content.add_widget(row2)
+        else:
+            row = BoxLayout(orientation='horizontal', spacing=8, size_hint_y=None, height=150)
+            f, inp = self._labeled_field("СУММА, руб", "0", format_num_simple(item.get('sum')))
+            fields['s'] = inp
+            row.add_widget(f)
+            if via:
+                f, inp = self._labeled_field("ИСПОЛНИТЕЛЮ, руб", "0", format_num_simple(item.get('print_cost') or 0))
+                fields['k'] = inp
+                row.add_widget(f)
+            content.add_widget(row)
+
+        res = Label(text="", markup=True, font_size='18sp', size_hint_y=None, height=130, halign='center', valign='middle')
+        res.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        content.add_widget(res)
+
+        def calc(*a):
+            if sized:
+                l, w, c = safe_float(fields['l'].text), safe_float(fields['w'].text), safe_float(fields['c'].text, 1)
+                area = l * w * c
+                total = area * safe_float(fields['p'].text)
+                cost = area * safe_float(fields['k'].text) if via else 0.0
+            else:
+                total = safe_float(fields['s'].text)
+                cost = safe_float(fields['k'].text) if via else 0.0
+            return total, cost
+
+        def show(*a):
+            total, cost = calc()
+            t = f"[b]БЫЛО: {rub(item.get('sum'))} р  »  [color=#00FF00]СТАНЕТ: {rub(total)} р[/color][/b]"
+            if via:
+                t += f"\n[color=#FFD54F]исполнителю: {rub(cost)} р[/color]"
+            res.text = t
+        for inp in fields.values():
+            inp.bind(text=show)
+        show()
+
+        def save(instance):
+            if getattr(pop, 'is_dismissing_flag', False):
+                return
+            total, cost = calc()
+            if sized:
+                desc = f"{fields['l'].text or '0'}x{fields['w'].text or '0'} x{fields['c'].text or '1'}шт"
+                price = safe_float(fields['p'].text)
+                pprice = safe_float(fields['k'].text) if via else 0.0
+            else:
+                desc, price, pprice = None, None, 0.0
+            ok, message = self.apply_order_edit(client, item, round(total, 2), round(cost, 2),
+                                                desc=desc, price=price, print_price=pprice)
+            if not ok:
+                self._stub_popup('ИСПРАВЛЕНИЕ', message)
+                return
+            self.safe_transition(pop, self.show_order_edit_list, client)
+
+        btn = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1), size_hint_y=None, height=100,
+                            bold=True, radius=24, font_size='21sp')
+        btn.bind(on_release=save)
+        content.add_widget(btn)
+        content.add_widget(Widget())
+        content.add_widget(self.get_bottom_buttons(pop, prev_cb=lambda: self.show_order_edit_list(client), cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
     def show_debt_popup(self, idx, prev_cb=None):
