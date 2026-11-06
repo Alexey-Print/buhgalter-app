@@ -1629,11 +1629,11 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         tot_debt, my_debt, _, profit_val = app.get_totals()
         card = self._make_section("ОБЩИЕ ИТОГИ", (0.5, 0.81, 0.6, 1), (0.5, 0.81, 0.6, 1), hdr_text=(0.05, 0.23, 0.11, 1))
-        r1 = BoxLayout(size_hint_y=None, height=92)
+        r1 = BoxLayout(size_hint_y=None, height=112)
         l1 = Label(text=f"[b][color=#FFFFFF]ДОЛЖНЫ: [/color][color=#8FE6B0]{rub(tot_debt)} р[/color][/b]",
-                   markup=True, font_size='23sp', halign='center', valign='middle')
+                   markup=True, font_size='30sp', halign='center', valign='middle')
         l1.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(l1, max_sp=30, min_sp=12)
+        self._fit_font(l1, max_sp=40, min_sp=14)
         l1.bind(pos=lambda *a: self._draw_tap_bg(l1),
                 size=lambda *a: self._draw_tap_bg(l1))
         r1.add_widget(l1)
