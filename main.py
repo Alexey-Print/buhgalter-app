@@ -121,8 +121,20 @@ def _bordered_field(field, accent=(0.4, 0.8, 1, 1), height=118, width_frac=1.0):
     wrap.add_widget(Widget(size_hint_x=sp))
     return wrap
 
+# ── Оформление «Графит»: общая палитра (используется экранами по мере перевода) ──
+GR_BG = (0.110, 0.122, 0.141, 1)        # графитовый фон окна
+GR_PANEL = (0.196, 0.212, 0.235, 1)     # панели/плашки чуть светлее
+GR_BORDER = (0.34, 0.36, 0.40, 1)       # тонкая серая рамка
+GR_ACCENT = (0.184, 0.478, 0.855, 1)    # голубой/синий акцент
+GR_ACCENT_DIM = (0.15, 0.22, 0.32, 1)   # акцент в неактивном состоянии
+GR_TEXT = (1, 1, 1, 1)                  # основной текст
+GR_SUB = (0.68, 0.71, 0.75, 1)          # подписи
+GR_RADIUS = 14
+
+
 class RoundedButton(Button):
     bg_color = ListProperty([0.1, 0.4, 0.8, 1])
+    border_color = ListProperty([0, 0, 0, 0])   # тонкая рамка (по умолчанию нет)
 
     def __init__(self, bg_color=(0.1, 0.4, 0.8, 1), radius=15, **kwargs):
         self.register_event_type('on_long_press')
@@ -137,7 +149,8 @@ class RoundedButton(Button):
         self._long_press_fired = False
         self.halign = 'center'
         self.valign = 'middle'
-        self.bind(pos=self.update_canvas, size=self.update_canvas, state=self.update_canvas, bg_color=self.update_canvas)
+        self.bind(pos=self.update_canvas, size=self.update_canvas, state=self.update_canvas, bg_color=self.update_canvas,
+                  border_color=self.update_canvas)
         self.bind(size=lambda s, v: setattr(s, 'text_size', (s.width - 20, s.height - 10)))
 
     def on_state(self, instance, value):
@@ -172,6 +185,9 @@ class RoundedButton(Button):
             else:
                 Color(*self.bg_color)
             RoundedRectangle(pos=self.pos, size=self.size, radius=self.radius)
+            if self.border_color[3] > 0 and self.width > 4 and self.height > 4:
+                Color(*self.border_color)
+                Line(rounded_rectangle=(self.x + 1, self.y + 1, self.width - 2, self.height - 2, self.radius[0][0]), width=1.2)
 
 class RowButton(ButtonBehavior, BoxLayout):
     bg_color = ListProperty([0.1, 0.4, 0.8, 1])
@@ -3116,15 +3132,30 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         if not app:
             return
-        c_name = app.clients[idx].get('name', '').upper()
-        if getattr(self, '_order_date_override', None):
-            c_name = f"{c_name}  ·  ЗА {self._order_date_override}"
-        content = BoxLayout(orientation='vertical', spacing=12, padding=15)
-        pop = TopMenuPopup(title=c_name, content=content, size_hint=(0.95, 0.92))
+        c_name = app.clients[idx].get('name', '')
+        _odate = getattr(self, '_order_date_override', None)
+        content = BoxLayout(orientation='vertical', spacing=14, padding=[18, 6, 18, 16])
+        pop = TopMenuPopup(title="", content=content, size_hint=(0.95, 0.92))
+        pop.title_size = '1sp'
+        pop.background = ''
+        pop.background_color = GR_BG
+        # шапка: имя клиента и подпись
+        head = BoxLayout(orientation='vertical', size_hint_y=None, height=150, spacing=2, padding=[0, 14, 0, 0])
+        lbl_name = Label(text=f"[b]{c_name}[/b]", markup=True, font_size='28sp', color=GR_TEXT,
+                         halign='center', valign='middle', shorten=True, shorten_from='right',
+                         size_hint_y=0.62)
+        lbl_name.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        lbl_sub = Label(text=(f"Дописать в заказ за {_odate}" if _odate else "Новый заказ"),
+                        font_size='16sp', color=((1, 0.84, 0.31, 1) if _odate else GR_SUB),
+                        halign='center', valign='top', size_hint_y=0.38)
+        lbl_sub.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        head.add_widget(lbl_name)
+        head.add_widget(lbl_sub)
+        content.add_widget(head)
         state = {'creditor_idx': creditor_idx}
-        top_box = BoxLayout(orientation='vertical', spacing=15, size_hint_y=None, height=275)
-        b_baner = RoundedButton(text="БАНЕР", height=130, size_hint_y=None, font_size='28sp', bold=True)
-        b_plenka = RoundedButton(text="ПЛЕНКА", height=130, size_hint_y=None, font_size='28sp', bold=True)
+        top_box = BoxLayout(orientation='vertical', spacing=14, size_hint_y=None, height=234)
+        b_baner = RoundedButton(text="Банер", height=110, size_hint_y=None, font_size='26sp', bold=True, radius=GR_RADIUS)
+        b_plenka = RoundedButton(text="Плёнка", height=110, size_hint_y=None, font_size='26sp', bold=True, radius=GR_RADIUS)
         top_box.add_widget(b_baner)
         top_box.add_widget(b_plenka)
         content.add_widget(top_box)
@@ -3137,7 +3168,7 @@ class ClientsScreen(Screen):
             cy = w.y + w.height / 2.0
             s = min(w.width * 0.20, 42)
             with w.canvas:
-                Color(0.15, 0.45, 0.95, 1)
+                Color(*GR_ACCENT)
                 if direction == 'down':
                     Mesh(vertices=[cx-s*1.5,cy+s*0.9,0,0, cx+s*1.5,cy+s*0.9,0,0, cx,cy+s*0.1,0,0], indices=[0,1,2], mode='triangle_fan')
                     Mesh(vertices=[cx-s*1.5,cy+s*0.0,0,0, cx+s*1.5,cy+s*0.0,0,0, cx,cy-s*0.8,0,0], indices=[0,1,2], mode='triangle_fan')
@@ -3156,12 +3187,11 @@ class ClientsScreen(Screen):
             r = 16
             with w.canvas.before:
                 if getattr(w, '_show_border', False):
-                    Color(0.15, 0.45, 0.95, 1)
-                    RoundedRectangle(pos=(x,y), size=(wd,h), radius=[(r,r)]*4)
-                    Color(0.12, 0.12, 0.14, 1)
-                    RoundedRectangle(pos=(x+4,y+4), size=(wd-8,h-8), radius=[(r-2,r-2)]*4)
+                    Color(*GR_BORDER)
+                    Line(points=[x, y + h / 2.0, x + wd * 0.18, y + h / 2.0], width=1.2)
+                    Line(points=[x + wd * 0.82, y + h / 2.0, x + wd, y + h / 2.0], width=1.2)
         source_frame.bind(pos=_draw_frame, size=_draw_frame)
-        lbl_source = BgLabel(text="", font_size='22sp', markup=True, halign='center', valign='middle', radius=14)
+        lbl_source = BgLabel(text="", font_size='20sp', markup=True, halign='center', valign='middle', radius=GR_RADIUS)
         lbl_source.bind(size=lambda s,v: setattr(s,'text_size',v))
         source_frame.add_widget(lbl_source)
         arrow_down_w = Widget(size_hint_y=None, height=80)
@@ -3199,25 +3229,25 @@ class ClientsScreen(Screen):
                 arrow_up_w.opacity = 1
                 anim_arrow.start(arrow_up_w)
                 source_box.height = 145
-                lbl_source.bg_color = [0.06, 0.2, 0.1, 1]
+                lbl_source.bg_color = list(GR_PANEL)
                 if state['creditor_idx'] is None:
-                    cr_disp = "СВОЙ РУЛОН"
+                    cr_disp = "Свой рулон"
                 else:
-                    cr_disp = app.clients[state['creditor_idx']].get('name', '').upper()
-                lbl_source.text = f"[color=#8FE6B0][b]В ДОЛГ У: {cr_disp}[/b][/color]"
-                b_baner.color = (1, 1, 1, 1)
-                b_plenka.color = (1, 1, 1, 1)
-                anim_baner.start(b_baner)
-                anim_plenka.start(b_plenka)
+                    cr_disp = app.clients[state['creditor_idx']].get('name', '')
+                lbl_source.text = f"[color=#ADB5BF]Печать:[/color] [color=#FFFFFF][b]{cr_disp}[/b][/color]"
+                b_baner.color = GR_TEXT
+                b_plenka.color = GR_TEXT
+                b_baner.bg_color = list(GR_ACCENT)
+                b_plenka.bg_color = list(GR_ACCENT)
             else:
                 Animation.cancel_all(b_baner)
                 Animation.cancel_all(b_plenka)
                 Animation.cancel_all(arrow_down_w)
                 Animation.cancel_all(arrow_up_w)
-                b_baner.bg_color = [0.1, 0.18, 0.32, 1]
-                b_plenka.bg_color = [0.08, 0.2, 0.14, 1]
-                b_baner.color = (0.4, 0.55, 0.78, 1)
-                b_plenka.color = (0.35, 0.6, 0.45, 1)
+                b_baner.bg_color = list(GR_ACCENT_DIM)
+                b_plenka.bg_color = list(GR_ACCENT_DIM)
+                b_baner.color = (0.55, 0.64, 0.76, 1)
+                b_plenka.color = (0.55, 0.64, 0.76, 1)
                 source_frame._show_border = True
                 _draw_frame(source_frame)
                 arrow_up_w.height = 0
@@ -3228,7 +3258,7 @@ class ClientsScreen(Screen):
                 _draw_arrows_fn(arrow_down_w, 'down')
                 anim_arrow.start(arrow_down_w)
                 lbl_source.bg_color = [0, 0, 0, 0]
-                lbl_source.text = "[color=#FFFFFF][b]ИСТОЧНИК ПЕЧАТИ[/b][/color]"
+                lbl_source.text = "[color=#FFFFFF][b]Источник печати[/b][/color]"
             for b, c_idx in creditor_btns:
                 Animation.cancel_all(b)
                 if c_idx is None:
@@ -3239,13 +3269,12 @@ class ClientsScreen(Screen):
                         b.height = 0
                         b.opacity = 0
                 if state['creditor_idx'] == c_idx:
-                    b.bg_color = [0.2, 0.7, 0.2, 1]
-                    b.text = f"[b]{b.base_text}[/b]  [size=14sp](выбрано)[/size]"
+                    b.bg_color = list(GR_ACCENT)
+                    b.border_color = [0, 0, 0, 0]
+                    b.text = f"[b]{b.base_text}[/b]"
                 else:
-                    if not is_selected:
-                        b.bg_color = [0.28, 0.18, 0.42, 1]
-                    else:
-                        b.bg_color = [0.2, 0.2, 0.26, 1]
+                    b.bg_color = list(GR_PANEL)
+                    b.border_color = list(GR_BORDER)
                     b.text = f"[b]{b.base_text}[/b]"
             if is_selected:
                 btn_add.height = 0
@@ -3268,13 +3297,16 @@ class ClientsScreen(Screen):
 
         m_indices = [i for i, c in enumerate(app.clients) if c.get('is_creditor')]
         for i in m_indices:
-            name = app.clients[i].get('name', '').upper()
-            c_box = BoxLayout(orientation='horizontal', spacing=8, size_hint_y=None, height=110)
-            btn_c = RoundedButton(markup=True, size_hint_x=0.75, font_size='22sp')
+            name = app.clients[i].get('name', '')
+            c_box = BoxLayout(orientation='horizontal', spacing=8, size_hint_y=None, height=100)
+            btn_c = RoundedButton(markup=True, size_hint_x=0.78, font_size='22sp', radius=GR_RADIUS, bg_color=GR_PANEL)
+            btn_c.halign = 'left'
+            btn_c.padding = [24, 0]
             btn_c.base_text = name
             btn_c.bind(on_release=lambda x, c_idx=i: on_creditor_select(x, c_idx))
             creditor_btns.append((btn_c, i))
-            btn_edit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint_x=0.25, radius=12)
+            btn_edit = EditButton(text="", bg_color=GR_PANEL, size_hint_x=0.22, radius=GR_RADIUS)
+            btn_edit.border_color = list(GR_BORDER)
             def do_edit(x, c_idx=i):
                 if getattr(pop, 'is_dismissing_flag', False): return
                 pop.is_dismissing_flag = True
@@ -3289,8 +3321,8 @@ class ClientsScreen(Screen):
         mid_arrow_w.bind(pos=lambda w,*a: _draw_arrows_fn(w, 'down'), size=lambda w,*a: _draw_arrows_fn(w, 'down'))
         creditors_grid.add_widget(mid_arrow_w)
 
-        btn_svoy = RoundedButton(markup=True, height=0, size_hint_y=None, font_size='22sp', opacity=0)
-        btn_svoy.base_text = "СВОЙ РУЛОН"
+        btn_svoy = RoundedButton(markup=True, height=0, size_hint_y=None, font_size='22sp', opacity=0, radius=GR_RADIUS, bg_color=GR_PANEL)
+        btn_svoy.base_text = "Свой рулон"
         btn_svoy.bind(on_release=lambda x: on_creditor_select(x, None))
         creditor_btns.append((btn_svoy, None))
         creditors_grid.add_widget(btn_svoy)
@@ -3298,7 +3330,8 @@ class ClientsScreen(Screen):
         spacer_add = Widget(size_hint_y=None, height=25)
         creditors_grid.add_widget(spacer_add)
 
-        btn_add = RoundedButton(text="+ ДОБАВИТЬ ИМЯ", bg_color=(0.7, 0.5, 0.1, 1), height=100, size_hint_y=None, bold=True, font_size='20sp')
+        btn_add = RoundedButton(text="+ Добавить имя", bg_color=GR_BG, height=96, size_hint_y=None, bold=True, font_size='21sp', radius=GR_RADIUS)
+        btn_add.border_color = list(GR_ACCENT)
         def on_add_click(x):
             Animation.cancel_all(lbl_source); Animation.cancel_all(b_baner); Animation.cancel_all(b_plenka)
             for b, _ in creditor_btns: Animation.cancel_all(b)
@@ -3309,8 +3342,9 @@ class ClientsScreen(Screen):
         update_selection()
         scroll.add_widget(creditors_grid)
         content.add_widget(scroll)
-        bottom_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=100, padding=[25, 0, 25, 0])
-        btn_back_nav = RoundedButton(text="НАЗАД", bg_color=(1, 0.45, 0, 1), font_size='22sp', bold=True, size_hint_x=0.45)
+        bottom_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=96, padding=[0, 0, 0, 0])
+        btn_back_nav = RoundedButton(text="Назад", bg_color=GR_PANEL, font_size='21sp', bold=True, size_hint_x=0.5, radius=GR_RADIUS)
+        btn_back_nav.border_color = list(GR_BORDER)
         def _do_back_nav(x):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
@@ -3319,7 +3353,8 @@ class ClientsScreen(Screen):
             pop.dismiss()
             if prev_cb: Clock.schedule_once(lambda dt: prev_cb(), 0.15)
         btn_back_nav.bind(on_release=_do_back_nav)
-        btn_close_nav = CancelButton(text="ЗАКРЫТЬ", bg_color=(0.6, 0.2, 0.2, 1), font_size='22sp', bold=True, size_hint_x=0.55)
+        btn_close_nav = RoundedButton(text="Закрыть", bg_color=GR_PANEL, font_size='21sp', bold=True, size_hint_x=0.5, radius=GR_RADIUS)
+        btn_close_nav.border_color = list(GR_BORDER)
         def _do_close_nav(x):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
