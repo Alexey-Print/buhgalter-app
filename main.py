@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from kivy.utils import escape_markup
 import time
 import math
 import uuid
@@ -2003,14 +2004,14 @@ class ClientsScreen(Screen):
         btn_add_pos = None
         if not client.get('is_creditor'):
             btn_add_pos = RoundedButton(text="+ ПОЗИЦИЯ", bg_color=(0.2, 0.6, 0.4, 1),
-                                        size_hint_x=0.4, font_size='16sp', bold=True, radius=20)
+                                        size_hint_x=0.45, font_size='15sp', bold=True, radius=20)
             btn_add_pos.bind(on_release=lambda x: add_to_day(current_viewed_date[0]))
             btn_add_taxi = RoundedButton(text="+ ТАКСИ", bg_color=(0.85, 0.65, 0.1, 1),
-                                         size_hint_x=0.34, font_size='16sp', bold=True, radius=20)
+                                         size_hint_x=0.31, font_size='15sp', bold=True, radius=20)
             btn_add_taxi.bind(on_release=lambda x: self.show_quick_extra(
                 client, current_viewed_date[0], 'taxi', lambda: refresh_history_view(current_viewed_date[0])))
             btn_add_dop = RoundedButton(text="+ ДОП", bg_color=(0.55, 0.35, 0.7, 1),
-                                        size_hint_x=0.26, font_size='16sp', bold=True, radius=20)
+                                        size_hint_x=0.24, font_size='15sp', bold=True, radius=20)
             btn_add_dop.bind(on_release=lambda x: self.show_quick_extra(
                 client, current_viewed_date[0], 'dop', lambda: refresh_history_view(current_viewed_date[0])))
             add_row = BoxLayout(orientation='horizontal', size_hint_x=0.875, spacing=8)
@@ -2141,6 +2142,17 @@ class ClientsScreen(Screen):
                     row.add_widget(del_btn)
                     list_layout.add_widget(row)
 
+            # комментарий к заказу этого дня
+            _note = str((client.get('notes') or {}).get(date_str) or '').strip()
+            if _note:
+                _nt = f"[color=#FFD54F][b]Комментарий:[/b][/color] {escape_markup(_note)}"
+            else:
+                _nt = "[color=#7A8494]+ комментарий к заказу[/color]"
+            note_row = TapTextRow(text=_nt, font_size='13sp')
+            note_row.bind(on_release=lambda x, d=date_str: self.show_day_note_editor(
+                client, d, lambda: refresh_history_view(d)))
+            list_layout.add_widget(note_row)
+
         def delete_item_callback(item, date_str):
             ok, message = reverse_order(app, client, item)
             if not ok:
@@ -2223,7 +2235,7 @@ class ClientsScreen(Screen):
                     items_for_day = date_groups[d_str]
                     day_total = sum(safe_float(it.get('sum', 0)) for it in items_for_day)
 
-                    hdr_row = BoxLayout(orientation='horizontal', size_hint_y=None, height=48, spacing=8)
+                    hdr_row = BoxLayout(orientation='horizontal', size_hint_y=None, height=66, spacing=8, padding=[0, 6, 0, 6])
                     hdr = Label(
                         text=f"[b][color=#AABBFF]  {d_str}[/color]   [color=#00FF88]+ {rub(day_total)} р[/color][/b]",
                         markup=True, font_size='17sp', halign='left', valign='middle'
@@ -2233,12 +2245,13 @@ class ClientsScreen(Screen):
                     if not client.get('is_creditor'):
                         btn_add_day = RoundedButton(
                             text="+ ДОБАВИТЬ", bg_color=(0.2, 0.6, 0.4, 1),
-                            size_hint_x=None, width=170, font_size='14sp', bold=True, radius=12
+                            size_hint_x=None, width=300, font_size='13sp', bold=True, radius=12
                         )
                         btn_add_day.bind(on_release=lambda x, d=d_str: add_to_day(d))
                         hdr_row.add_widget(btn_add_day)
                     all_list.add_widget(hdr_row)
                     copy_lines.append(f"\n📅 {d_str}  —  {rub(day_total)} р")
+                    _dnote = str((client.get('notes') or {}).get(d_str) or '').strip()
 
                     counter = 1
                     for item in items_for_day:
@@ -2273,6 +2286,13 @@ class ClientsScreen(Screen):
                         else:
                             copy_lines.append(f"{counter}) {_sz} = {sum_val} р")
                         counter += 1
+                    if _dnote:
+                        n_lbl = Label(text=f"[color=#FFD54F]Комментарий:[/color] {escape_markup(_dnote)}", markup=True,
+                                      font_size='15sp', halign='left', valign='middle', size_hint_y=None, height=44)
+                        n_lbl.bind(width=lambda s_, v: setattr(s_, 'text_size', (v - 30, None)),
+                                   texture_size=lambda s_, ts: setattr(s_, 'height', max(44, ts[1] + 8)))
+                        all_list.add_widget(n_lbl)
+                        copy_lines.append(f"💬 {_dnote}")
 
             copy_lines.append("\n━━━━━━━━━━━━━━━━")
             copy_lines.append(f"💰 ИТОГО ДОЛГ: {rub(grand_total)} р")
@@ -4434,6 +4454,57 @@ class ClientsScreen(Screen):
                 on_done()
 
         btn = RoundedButton(text="ДОБАВИТЬ В ЗАКАЗ", bg_color=(0.2, 0.6, 0.4, 1), height=90, size_hint_y=None, bold=True)
+        btn.bind(on_release=save)
+        content.add_widget(btn)
+        content.add_widget(Widget())
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ОТМЕНА"))
+        pop.open()
+
+    def save_day_note(self, client, day_str, text):
+        """Комментарий к заказу дня. Пустой текст — удалить. Всё или ничего."""
+        app = App.get_running_app()
+        if not app or not any(c is client for c in app.clients):
+            return False
+        snap = snapshot(app)
+        try:
+            notes = client.setdefault('notes', {})
+            text = (text or '').strip()
+            if text:
+                notes[day_str] = text[:500]
+            else:
+                notes.pop(day_str, None)
+                if not notes:
+                    client.pop('notes', None)
+            app._op = 'комментарий к заказу ' + day_str
+            if app.save_data() is not True:
+                raise OSError('не сохранено')
+        except Exception:
+            restore(app, snap)
+            return False
+        return True
+
+    def show_day_note_editor(self, client, day_str, on_done=None):
+        content = BoxLayout(orientation='vertical', spacing=12, padding=20)
+        pop = TopMenuPopup(title=f"КОММЕНТАРИЙ ЗА {day_str}", content=content, size_hint=(0.92, 0.6))
+        inp = TextInput(text=str((client.get('notes') or {}).get(day_str) or ''), multiline=True,
+                        font_size='18sp', size_hint_y=None, height=260,
+                        background_normal='', background_active='', background_color=(0.11, 0.13, 0.19, 1),
+                        foreground_color=(1, 1, 1, 1), cursor_color=(0.2, 0.75, 0.84, 1),
+                        hint_text="например: забрать в пятницу, оплата наличными")
+        content.add_widget(inp)
+
+        def save(x):
+            if getattr(pop, 'is_dismissing_flag', False):
+                return
+            if not self.save_day_note(client, day_str, inp.text):
+                self._stub_popup('КОММЕНТАРИЙ', 'Не сохранено, попробуйте ещё раз')
+                return
+            pop.is_dismissing_flag = True
+            pop.dismiss()
+            if on_done:
+                on_done()
+
+        btn = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.6, 0.4, 1), height=90, size_hint_y=None, bold=True)
         btn.bind(on_release=save)
         content.add_widget(btn)
         content.add_widget(Widget())

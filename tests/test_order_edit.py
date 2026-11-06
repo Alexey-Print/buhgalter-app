@@ -169,3 +169,22 @@ class QuickExtraTests(TaxiTests):
         self.assertEqual(self.sasha['debt'], money(1500))
         self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 100)   # -200 такси пополам + 300 доп
         self.assertIsNone(getattr(self.s, '_order_date_override', None))
+
+
+class DayNoteTests(TaxiTests):
+    def test_note_save_and_clear(self):
+        debt0 = self.sasha['debt']
+        self.assertTrue(self.s.save_day_note(self.sasha, '05.11.26', '  оплата в пятницу  '))
+        self.assertEqual(self.sasha['notes'], {'05.11.26': 'оплата в пятницу'})
+        self.app.load_data()
+        sasha = [c for c in self.app.clients if c.get('name') == 'САША'][0]
+        self.assertEqual(sasha['notes']['05.11.26'], 'оплата в пятницу')
+        self.assertEqual(sasha['debt'], debt0)
+        self.assertTrue(self.s.save_day_note(sasha, '05.11.26', ''))
+        self.assertNotIn('notes', sasha)
+
+    def test_note_failure_keeps_old(self):
+        self.assertTrue(self.s.save_day_note(self.sasha, '05.11.26', 'старый'))
+        self.app.save_data = lambda: False
+        self.assertFalse(self.s.save_day_note(self.sasha, '05.11.26', 'новый'))
+        self.assertEqual(self.sasha['notes']['05.11.26'], 'старый')
