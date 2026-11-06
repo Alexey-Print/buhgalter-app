@@ -1690,8 +1690,9 @@ class ClientsScreen(Screen):
             return
         content = BoxLayout(orientation='vertical', spacing=12, padding=20)
         pop = TopMenuPopup(title="ТЕКУЩАЯ ПРИБЫЛЬ", content=content, size_hint=(0.94, 0.85))
-        info = Label(text="", markup=True, font_size='19sp', size_hint_y=None, height=110, halign='center', valign='middle')
-        info.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        info = Label(text="", markup=True, font_size='18sp', size_hint_y=None, height=120, halign='center', valign='middle')
+        info.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)),
+                  texture_size=lambda s_, ts: setattr(s_, 'height', ts[1] + 16))
         content.add_widget(info)
 
         def show_info():
@@ -1700,11 +1701,11 @@ class ClientsScreen(Screen):
         show_info()
         f_amt, in_amt = self._labeled_field("СКОЛЬКО ОТДАЛ, руб", "0")
         f_amt.size_hint_y = None
-        f_amt.height = 150
+        f_amt.height = 130
         content.add_widget(f_amt)
-        row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=96)
-        b_take = RoundedButton(text="ОТДАЛ", bg_color=(0.18, 0.48, 0.86, 1), bold=True, font_size='19sp', radius=18)
-        b_reset = RoundedButton(text="ОБНУЛИТЬ", bg_color=(0.32, 0.36, 0.44, 1), bold=True, font_size='19sp', radius=18)
+        row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=80)
+        b_take = RoundedButton(text="ОТДАЛ", bg_color=(0.18, 0.48, 0.86, 1), bold=True, font_size='17sp', radius=16)
+        b_reset = RoundedButton(text="ОБНУЛИТЬ", bg_color=(0.32, 0.36, 0.44, 1), bold=True, font_size='17sp', radius=16)
         row.add_widget(b_take); row.add_widget(b_reset)
         content.add_widget(row)
         hist_lbl = Label(text="", markup=True, font_size='14sp', halign='left', valign='top')
