@@ -1656,7 +1656,89 @@ class ClientsScreen(Screen):
         r2.add_widget(phist)
         r2.add_widget(pedit)
         card.add_widget(r2)
+        # текущая прибыль: уменьшается, когда «ОТДАЛ»; общая остаётся
+        cur = app.current_profit()
+        r3 = BoxLayout(size_hint_y=None, height=92, spacing=6)
+        if cur >= 0:
+            ctxt = f"[b][color=#FFFFFF]ТЕКУЩАЯ: [/color][color=#5FD3FF]{rub(cur)} р[/color][/b]"
+        else:
+            ctxt = f"[b][color=#FF6B6B]ТЕКУЩАЯ: -{rub(abs(cur))} р[/color][/b]"
+        cl = Label(text=ctxt, markup=True, font_size='23sp', halign='center', valign='middle')
+        cl.bind(size=lambda s, v: setattr(s, 'text_size', v))
+        self._fit_font(cl, max_sp=30, min_sp=12)
+        cclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
+        cclick.add_widget(cl)
+        cclick.bind(on_release=lambda x: self.show_current_profit_popup())
+        cclick.bind(pos=lambda *a: self._draw_tap_bg(cclick),
+                    size=lambda *a: self._draw_tap_bg(cclick),
+                    state=lambda *a: self._draw_tap_bg(cclick))
+        cbtn = RoundedButton(text="ОТДАЛ", bg_color=(0.18, 0.48, 0.86, 1), size_hint=(None, 1), width=378,
+                             radius=16, font_size='20sp', bold=True)
+        cbtn.bind(on_release=lambda x: self.show_current_profit_popup())
+        r3.add_widget(cclick)
+        r3.add_widget(cbtn)
+        card.add_widget(r3)
         return card
+
+    def show_current_profit_popup(self, *args):
+        app = App.get_running_app()
+        if not app:
+            return
+        content = BoxLayout(orientation='vertical', spacing=12, padding=20)
+        pop = TopMenuPopup(title="ТЕКУЩАЯ ПРИБЫЛЬ", content=content, size_hint=(0.94, 0.85))
+        info = Label(text="", markup=True, font_size='19sp', size_hint_y=None, height=110, halign='center', valign='middle')
+        info.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        content.add_widget(info)
+
+        def show_info():
+            info.text = (f"[b]общая: [color=#8FE6B0]{rub(app.get_totals()[3])} р[/color][/b]\n"
+                         f"[b]текущая: [color=#5FD3FF]{rub(app.current_profit())} р[/color][/b]")
+        show_info()
+        f_amt, in_amt = self._labeled_field("СКОЛЬКО ОТДАЛ, руб", "0")
+        f_amt.size_hint_y = None
+        f_amt.height = 150
+        content.add_widget(f_amt)
+        row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=96)
+        b_take = RoundedButton(text="ОТДАЛ", bg_color=(0.18, 0.48, 0.86, 1), bold=True, font_size='19sp', radius=18)
+        b_reset = RoundedButton(text="ОБНУЛИТЬ ТЕКУЩУЮ", bg_color=(0.32, 0.36, 0.44, 1), bold=True, font_size='16sp', radius=18)
+        row.add_widget(b_take); row.add_widget(b_reset)
+        content.add_widget(row)
+        hist_lbl = Label(text="", markup=True, font_size='14sp', halign='left', valign='top')
+        hist_lbl.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        content.add_widget(hist_lbl)
+
+        def show_hist():
+            takes = list(getattr(app, 'profit_takes', []) or [])[-8:]
+            if not takes:
+                hist_lbl.text = "[color=#7A8494]Пока ничего не отдано[/color]"
+                return
+            lines = ["[color=#AAB4C8]Последние:[/color]"]
+            for t in reversed(takes):
+                lines.append(f"{t.get('date', '')}   {t.get('kind', '')}  [color=#5FD3FF]{rub(t.get('amount', 0))} р[/color]")
+            hist_lbl.text = "\n".join(lines)
+        show_hist()
+
+        def after():
+            show_info(); show_hist(); in_amt.text = ''
+            self.refresh_list()
+
+        def do_take(x):
+            ok, msg = app.take_profit(in_amt.text)
+            if not ok:
+                self._stub_popup('ТЕКУЩАЯ ПРИБЫЛЬ', msg)
+                return
+            after()
+
+        def do_reset(x):
+            ok, msg = app.take_profit(reset=True)
+            if not ok:
+                self._stub_popup('ТЕКУЩАЯ ПРИБЫЛЬ', msg)
+                return
+            after()
+        b_take.bind(on_release=do_take)
+        b_reset.bind(on_release=do_reset)
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
 
     def show_profit_history_popup(self, *args):
         app = App.get_running_app()
@@ -2573,7 +2655,7 @@ class ClientsScreen(Screen):
                 Color(0.2, 0.65, 0.35, 0.3)
                 RoundedRectangle(pos=(w.x+2, w.y+2), size=(w.width-4, w.height-4), radius=[(14,14)]*4)
         profit_card.bind(pos=_draw_profit_card, size=_draw_profit_card)
-        lbl_subtitle = Label(text="[color=#AAAAAA]ТЕКУЩАЯ ПРИБЫЛЬ[/color]", markup=True, font_size='15sp',
+        lbl_subtitle = Label(text="[color=#AAAAAA]ОБЩАЯ ПРИБЫЛЬ[/color]", markup=True, font_size='15sp',
                              halign='center', valign='bottom', size_hint_y=0.3)
         lbl_subtitle.bind(size=lambda s, v: setattr(s, 'text_size', v))
         if current_profit >= 0:
@@ -2613,9 +2695,13 @@ class ClientsScreen(Screen):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
             snap = snapshot(app)
+            _old_taken = (getattr(app, 'profit_taken', '0'), list(getattr(app, 'profit_takes', []) or []))
             app.profit_correction = str(round(val - tot_debt + banner_deficit, 2))
+            if abs(val) < 0.005:   # общая обнулена — текущая тоже с нуля
+                app.profit_taken, app.profit_takes = '0', []
             ok, message = commit(app, snap, 'правка прибыли')
             if not ok:
+                app.profit_taken, app.profit_takes = _old_taken
                 pop.is_dismissing_flag = False
                 self._stub_popup('ПРИБЫЛЬ', message)
                 return
@@ -2660,8 +2746,11 @@ class ClientsScreen(Screen):
                 for c in app.clients:
                     c.update({'debt': '0', 'zakupka_total': '0', 'history': []})
                 app.profit_correction = '0'
+                _old_taken = (getattr(app, 'profit_taken', '0'), list(getattr(app, 'profit_takes', []) or []))
+                app.profit_taken, app.profit_takes = '0', []
                 ok, message = commit(app, snap, 'общий сброс')
                 if not ok:
+                    app.profit_taken, app.profit_takes = _old_taken
                     p_conf.is_dismissing_flag = False
                     self._stub_popup('СБРОС', message)
                     return
@@ -4791,6 +4880,37 @@ class BusinessApp(App):
             real_profit = 0.0
         return tot_debt, my_debt, banner_deficit, real_profit
 
+    def current_profit(self):
+        """Текущая прибыль = общая минус всё, что отдано («ОТДАЛ»). Общая не меняется."""
+        return round(self.get_totals()[3] - safe_float(getattr(self, 'profit_taken', '0')), 2)
+
+    def take_profit(self, amount=None, reset=False):
+        """«ОТДАЛ» сумму из текущей прибыли или «ОБНУЛИТЬ» текущую. Всё или ничего."""
+        old_taken = getattr(self, 'profit_taken', '0')
+        old_takes = list(getattr(self, 'profit_takes', []) or [])
+        cur = self.current_profit()
+        if reset:
+            amount = cur
+            kind = 'обнулено'
+        else:
+            amount = round(safe_float(amount), 2)
+            if amount <= 0:
+                return False, 'Впишите сумму больше 0'
+            kind = 'отдал'
+        try:
+            self.profit_taken = format_num_simple(round(safe_float(old_taken) + amount, 2)).replace(' ', '')
+            self.profit_takes = old_takes + [{'date': datetime.now().strftime('%d.%m.%y %H:%M'),
+                                              'amount': format_num_simple(amount).replace(' ', ''),
+                                              'kind': kind}]
+            self.profit_takes = self.profit_takes[-200:]
+            self._op = f'текущая прибыль: {kind} {amount}'
+            if self.save_data() is not True:
+                raise OSError('не сохранено')
+        except Exception as exc:
+            self.profit_taken, self.profit_takes = old_taken, old_takes
+            return False, 'Не сохранено, всё как было: ' + str(exc)
+        return True, 'Сохранено'
+
     def _has_real_data(self):
         for c in self.clients:
             name = c.get('name', '').upper()
@@ -4828,6 +4948,8 @@ class BusinessApp(App):
                         self.profit_log = data.get("profit_log", [])
                         self.rolls = data.get("rolls", [])
                         self.journal = data.get("journal", [])
+                        self.profit_taken = data.get("profit_taken", "0")
+                        self.profit_takes = data.get("profit_takes", [])
                         self._rolls_key_present = ("rolls" in data)
                         return True
                 except Exception:
@@ -4853,6 +4975,8 @@ class BusinessApp(App):
                     self.profit_log = data.get("profit_log", [])
                     self.rolls = data.get("rolls", [])
                     self.journal = data.get("journal", [])
+                    self.profit_taken = data.get("profit_taken", "0")
+                    self.profit_takes = data.get("profit_takes", [])
                     self._rolls_key_present = ("rolls" in data)
                     loaded = True
             except Exception:
@@ -4913,6 +5037,8 @@ class BusinessApp(App):
         self.rolls = []
         self._rolls_key_present = False
         self.journal = []
+        self.profit_taken = "0"
+        self.profit_takes = []
 
     def _write_backup(self, text):
         try:
@@ -4946,7 +5072,9 @@ class BusinessApp(App):
                      "print_cost": getattr(self, 'print_cost', "55"),
                      "profit_log": getattr(self, 'profit_log', []),
                      "rolls": getattr(self, 'rolls', []),
-                     "journal": getattr(self, 'journal', [])})
+                     "journal": getattr(self, 'journal', []),
+                     "profit_taken": getattr(self, 'profit_taken', "0"),
+                     "profit_takes": getattr(self, 'profit_takes', [])})
         return data
 
     def write_verified_backup(self):
