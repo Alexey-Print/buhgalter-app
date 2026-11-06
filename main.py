@@ -2003,12 +2003,21 @@ class ClientsScreen(Screen):
         btn_add_pos = None
         if not client.get('is_creditor'):
             btn_add_pos = RoundedButton(text="+ ПОЗИЦИЯ", bg_color=(0.2, 0.6, 0.4, 1),
-                                        size_hint_y=None, height=84, font_size='17sp', bold=True, radius=20)
+                                        size_hint_x=0.4, font_size='16sp', bold=True, radius=20)
             btn_add_pos.bind(on_release=lambda x: add_to_day(current_viewed_date[0]))
+            btn_add_taxi = RoundedButton(text="+ ТАКСИ", bg_color=(0.85, 0.65, 0.1, 1),
+                                         size_hint_x=0.34, font_size='16sp', bold=True, radius=20)
+            btn_add_taxi.bind(on_release=lambda x: self.show_quick_extra(
+                client, current_viewed_date[0], 'taxi', lambda: refresh_history_view(current_viewed_date[0])))
+            btn_add_dop = RoundedButton(text="+ ДОП", bg_color=(0.55, 0.35, 0.7, 1),
+                                        size_hint_x=0.26, font_size='16sp', bold=True, radius=20)
+            btn_add_dop.bind(on_release=lambda x: self.show_quick_extra(
+                client, current_viewed_date[0], 'dop', lambda: refresh_history_view(current_viewed_date[0])))
+            add_row = BoxLayout(orientation='horizontal', size_hint_x=0.875, spacing=8)
+            add_row.add_widget(btn_add_pos); add_row.add_widget(btn_add_taxi); add_row.add_widget(btn_add_dop)
             add_wrap = BoxLayout(orientation='horizontal', size_hint_y=None, height=84)
             add_wrap.add_widget(Widget(size_hint_x=0.0625))
-            btn_add_pos.size_hint_x = 0.875
-            add_wrap.add_widget(btn_add_pos)
+            add_wrap.add_widget(add_row)
             add_wrap.add_widget(Widget(size_hint_x=0.0625))
             popup_content.add_widget(add_wrap)
 
@@ -2035,7 +2044,7 @@ class ClientsScreen(Screen):
         def refresh_history_view(date_str):
             current_viewed_date[0] = date_str
             if btn_add_pos is not None:
-                btn_add_pos.text = f"+ ПОЗИЦИЯ ЗА {date_str}"
+                btn_add_pos.text = "+ ПОЗИЦИЯ"
             list_layout.clear_widgets()
             filter_btn.set_date(date_str)
             filtered_items = []
@@ -3807,7 +3816,7 @@ class ClientsScreen(Screen):
             t_pop = TopMenuPopup(title="ТАКСИ", content=BoxLayout(orientation='vertical', spacing=12, padding=20), size_hint=(0.9, 0.7))
             row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=150)
             f_paid, in_paid = self._labeled_field("Я ЗАПЛАТИЛ, руб", "0")
-            f_bill, in_bill = self._labeled_field("КЛИЕНТУ, руб", "= столько же")
+            f_bill, in_bill = self._labeled_field("КЛИЕНТУ, руб", "так же")
             row.add_widget(f_paid); row.add_widget(f_bill)
             t_pop.content.add_widget(row)
             share_row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=70)
@@ -4337,6 +4346,98 @@ class ClientsScreen(Screen):
         content.add_widget(btn)
         content.add_widget(Widget())
         content.add_widget(self.get_bottom_buttons(pop, prev_cb=lambda: self.show_order_edit_list(client), cancel_text="ЗАКРЫТЬ"))
+        pop.open()
+
+    def save_quick_extra(self, client, day_str, kind, bill, paid=0.0):
+        """Такси или допобработка прямо из истории, в выбранный день. Возвращает True/False."""
+        app = App.get_running_app()
+        pos = [i for i, c in enumerate(app.clients) if c is client] if app else []
+        if len(pos) != 1 or bill <= 0 or paid < 0:
+            return False
+        old = getattr(self, '_order_date_override', None)
+        self._order_date_override = day_str
+        try:
+            if kind == 'taxi':
+                return self._final_save(pos[0], f"{format_num_simple(bill)} руб", None, "taxi",
+                                        print_cost=paid, order_desc="Такси", price=None,
+                                        badge="[ТАКСИ]", print_price=0.0)
+            return self._final_save(pos[0], f"{format_num_simple(bill)} руб", None, "dop",
+                                    print_cost=0.0, order_desc="Допобработка", price=None,
+                                    badge="[ДОП]", print_price=0.0)
+        finally:
+            self._order_date_override = old
+
+    def show_quick_extra(self, client, day_str, kind, on_done=None):
+        is_taxi = kind == 'taxi'
+        content = BoxLayout(orientation='vertical', spacing=12, padding=20)
+        pop = TopMenuPopup(title=f"{'ТАКСИ' if is_taxi else 'ДОПОБРАБОТКА'} ЗА {day_str}", content=content,
+                           size_hint=(0.9, 0.7))
+        row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=150)
+        if is_taxi:
+            f_paid, in_paid = self._labeled_field("Я ЗАПЛАТИЛ, руб", "0")
+            f_bill, in_bill = self._labeled_field("КЛИЕНТУ, руб", "так же")
+            row.add_widget(f_paid); row.add_widget(f_bill)
+        else:
+            in_paid = None
+            f_bill, in_bill = self._labeled_field("СУММА, руб", "0")
+            row.add_widget(f_bill)
+        content.add_widget(row)
+        if is_taxi:
+            share_row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=70)
+            b_full = RoundedButton(text="ВСЁ КЛИЕНТУ", bg_color=(0.25, 0.32, 0.45, 1), bold=True, font_size='16sp', radius=14)
+            b_half = RoundedButton(text="ПОПОЛАМ", bg_color=(0.25, 0.32, 0.45, 1), bold=True, font_size='16sp', radius=14)
+            b_full.bind(on_release=lambda x: setattr(in_bill, 'text', ''))
+            b_half.bind(on_release=lambda x: setattr(in_bill, 'text', format_num_simple(round(safe_float(in_paid.text) / 2, 2))))
+            share_row.add_widget(b_full); share_row.add_widget(b_half)
+            content.add_widget(share_row)
+        info = Label(text="", markup=True, font_size='17sp', size_hint_y=None, height=130, halign='center', valign='middle')
+        info.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        content.add_widget(info)
+
+        def vals():
+            if is_taxi:
+                paid = safe_float(in_paid.text)
+                bill = safe_float(in_bill.text) if in_bill.text.strip() else paid
+                return paid, bill
+            return 0.0, safe_float(in_bill.text)
+
+        def show(*a):
+            paid, bill = vals()
+            if not is_taxi:
+                info.text = (f"[b]в долг клиенту: [color=#00FF00]{rub(bill)} р[/color][/b]\n"
+                             "[color=#AAB4C8]полностью в прибыль[/color]")
+                return
+            diff = round(bill - paid, 2)
+            if diff < 0:
+                tail = f"из моей прибыли: [color=#FF6666]{rub(-diff)} р[/color]"
+            elif diff > 0:
+                tail = f"в прибыль: [color=#FFD54F]{rub(diff)} р[/color]"
+            else:
+                tail = "[color=#AAB4C8]в прибыль не идёт[/color]"
+            info.text = f"[b]в долг клиенту: [color=#00FF00]{rub(bill)} р[/color][/b]\n{tail}"
+        for inp in (in_paid, in_bill):
+            if inp is not None:
+                inp.bind(text=show)
+        show()
+
+        def save(x):
+            if getattr(pop, 'is_dismissing_flag', False):
+                return
+            paid, bill = vals()
+            if bill <= 0:
+                return
+            if not self.save_quick_extra(client, day_str, kind, bill, paid):
+                return
+            pop.is_dismissing_flag = True
+            pop.dismiss()
+            if on_done:
+                on_done()
+
+        btn = RoundedButton(text="ДОБАВИТЬ В ЗАКАЗ", bg_color=(0.2, 0.6, 0.4, 1), height=90, size_hint_y=None, bold=True)
+        btn.bind(on_release=save)
+        content.add_widget(btn)
+        content.add_widget(Widget())
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ОТМЕНА"))
         pop.open()
 
     def show_debt_popup(self, idx, prev_cb=None):

@@ -154,3 +154,18 @@ class PencilPaymentTests(unittest.TestCase):
         self.assertEqual(self.app.clients[-1]['debt'], money(4115.6))
         self.assertEqual(self.app.clients[-1]['name'], 'ЛЕХА')
         self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 0)
+
+
+class QuickExtraTests(TaxiTests):
+    def test_taxi_and_dop_on_day(self):
+        p0 = self.app.get_totals()[3]
+        self.assertTrue(self.s.save_quick_extra(self.sasha, '01.01.20', 'taxi', 200, 400))
+        t = self.sasha['history'][-1]
+        self.assertTrue(t['date'].startswith('01.01.20 '))
+        self.assertEqual((t['mode'], t['badge']), ('taxi', '[ТАКСИ]'))
+        self.assertTrue(self.s.save_quick_extra(self.sasha, '01.01.20', 'dop', 300))
+        d = self.sasha['history'][-1]
+        self.assertEqual((d['mode'], d['badge']), ('dop', '[ДОП]'))
+        self.assertEqual(self.sasha['debt'], money(1500))
+        self.assertEqual(round(self.app.get_totals()[3] - p0, 2), 100)   # -200 такси пополам + 300 доп
+        self.assertIsNone(getattr(self.s, '_order_date_override', None))
