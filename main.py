@@ -671,8 +671,9 @@ class TapTextRow(ButtonBehavior, Label):
         kw.setdefault('valign', 'middle')
         kw.setdefault('size_hint_y', None)
         super().__init__(**kw)
-        self.bind(width=lambda s, v: setattr(s, 'text_size', (v - 36, None)),
-                  texture_size=lambda s, ts: setattr(s, 'height', max(110, ts[1] + 40)),
+        self.min_h = 64
+        self.bind(width=lambda s, v: setattr(s, 'text_size', (v - 24, None)),
+                  texture_size=lambda s, ts: setattr(s, 'height', max(s.min_h, ts[1] + 18)),
                   pos=self._bg, size=self._bg, state=self._bg)
 
     def _bg(self, *a):
@@ -3948,14 +3949,14 @@ class ClientsScreen(Screen):
         is_special_banner = idx in (b_idx, c_idx)
 
         scroll = ScrollView()
-        content = BoxLayout(orientation='vertical', spacing=32, padding=[16, 14, 16, 14], size_hint_y=None)
+        content = BoxLayout(orientation='vertical', spacing=18, padding=[16, 10, 16, 10], size_hint_y=None)
         content.bind(minimum_height=content.setter('height'))
         pop = TopMenuPopup(title="РЕДАКТИРОВАНИЕ", content=scroll, size_hint=(0.95, 0.9))
         pop.background_color = (0.043, 0.055, 0.08, 1)
 
-        def make_card(caption, accent, field, height=272):
+        def make_card(caption, accent, field, height=200):
             card = BoxLayout(orientation='vertical', size_hint_y=None, height=height,
-                             padding=[20, 18, 20, 22], spacing=20)
+                             padding=[20, 12, 20, 14], spacing=8)
 
             def _draw(w, *a):
                 w.canvas.before.clear()
@@ -3974,18 +3975,25 @@ class ClientsScreen(Screen):
             return card
 
         def styled_input(**kw):
-            return TextInput(multiline=False, halign='center', font_size='26sp',
-                             background_normal='', background_active='',
-                             background_color=(0.11, 0.13, 0.19, 1), foreground_color=(1, 1, 1, 1),
-                             cursor_color=(0.2, 0.75, 0.84, 1), size_hint_y=None, height=132,
-                             padding=[10, 30, 10, 16], **kw)
+            ti = TextInput(multiline=False, halign='center', font_size='24sp',
+                           background_normal='', background_active='',
+                           background_color=(0.11, 0.13, 0.19, 1), foreground_color=(1, 1, 1, 1),
+                           cursor_color=(0.2, 0.75, 0.84, 1), size_hint_y=None, height=118,
+                           padding=[10, 20, 10, 10], **kw)
+
+            def _vc(inst, *a):   # текст по центру поля при любом размере шрифта телефона
+                lh = inst.line_height or 30
+                top = max(4, (inst.height - lh) / 2.0)
+                inst.padding = [10, top, 10, 4]
+            ti.bind(height=_vc, line_height=_vc)
+            return ti
 
         # ── ИМЯ ──
         if is_special_banner:
             in_n = None
             name_lbl = Label(text=f"[b]{c.get('name', '').upper()}[/b]", markup=True,
                              font_size='27sp', color=(1, 0.8, 0.2, 1), halign='center', valign='middle',
-                             size_hint_y=None, height=132)
+                             size_hint_y=None, height=118)
             name_lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
             content.add_widget(make_card("МАТЕРИАЛ", (0.2, 0.75, 0.84, 1), name_lbl))
         else:
@@ -4048,12 +4056,12 @@ class ClientsScreen(Screen):
         btn_reset.bind(on_release=lambda x: setattr(in_d, 'text', '0'))
         content.add_widget(btn_reset)
 
-        row = BoxLayout(orientation='horizontal', spacing=14, size_hint_y=None, height=120)
-        btn_ok = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1), bold=True, radius=24, font_size='21sp')
+        row = BoxLayout(orientation='horizontal', spacing=14, size_hint_y=None, height=104)
+        btn_ok = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1), bold=True, radius=24, font_size='18sp')
         btn_ok.bind(on_release=on_edit_save)
         row.add_widget(btn_ok)
         if not is_special_banner:
-            btn_del = RoundedButton(text="УДАЛИТЬ", bg_color=(0.8, 0.3, 0.3, 1), bold=True, radius=24, font_size='21sp')
+            btn_del = RoundedButton(text="УДАЛИТЬ", bg_color=(0.8, 0.3, 0.3, 1), bold=True, radius=24, font_size='18sp')
             btn_del.bind(on_release=on_delete)
             row.add_widget(btn_del)
         content.add_widget(row)
@@ -4142,12 +4150,12 @@ class ClientsScreen(Screen):
         content = BoxLayout(orientation='vertical', spacing=8, padding=[10, 10, 10, 10])
         pop = TopMenuPopup(title=f"ИСПРАВИТЬ: {client.get('name', '').upper()}", content=content, size_hint=(0.97, 0.95))
         hint = Label(text="[color=#AAB4C8]Нажмите на позицию, чтобы исправить[/color]", markup=True,
-                     font_size='15sp', size_hint_y=None, height=34, halign='center', valign='middle')
+                     font_size='13sp', size_hint_y=None, height=34, halign='center', valign='middle')
         hint.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)),
                   texture_size=lambda s_, ts: setattr(s_, 'height', ts[1] + 10))
         content.add_widget(hint)
         scroll = ScrollView()
-        lst = GridLayout(cols=1, spacing=12, size_hint_y=None, padding=[0, 4, 0, 10])
+        lst = GridLayout(cols=1, spacing=8, size_hint_y=None, padding=[0, 4, 0, 10])
         lst.bind(minimum_height=lst.setter('height'))
         scroll.add_widget(lst)
         content.add_widget(scroll)
@@ -4166,16 +4174,16 @@ class ClientsScreen(Screen):
         if not groups:
             lst.add_widget(Label(text="История пуста", font_size='17sp', size_hint_y=None, height=80))
         for d in sorted(groups, key=_key, reverse=True):
-            day_lbl = Label(text=f"[b][color=#AABBFF]{d}[/color][/b]", markup=True, font_size='16sp',
+            day_lbl = Label(text=f"[b][color=#AABBFF]{d}[/color][/b]", markup=True, font_size='15sp',
                             size_hint_y=None, height=38, halign='left', valign='bottom')
             day_lbl.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)),
-                         texture_size=lambda s_, ts: setattr(s_, 'height', ts[1] + 24))
+                         texture_size=lambda s_, ts: setattr(s_, 'height', ts[1] + 14))
             lst.add_widget(day_lbl)
             for n, h in enumerate(groups[d], 1):
                 desc = str(h.get('desc') or '').replace('Заказ:', '').strip()
                 pr = f" [color=#FF6666]{format_num_simple(h.get('price'))}р/м2[/color]" if h.get('price') else ''
                 b = TapTextRow(text=f"{n}) {desc}{pr}  [color=#00FF00]=\u00a0{rub(h.get('sum')).replace(' ', chr(160))}\u00a0р[/color]  [color=#8A8A8A]{h.get('badge') or ''}[/color]",
-                               font_size='15sp')
+                               font_size='13sp')
                 b.bind(on_release=lambda x, it=h: self.safe_transition(pop, self.show_order_item_edit, client, it))
                 lst.add_widget(b)
 
