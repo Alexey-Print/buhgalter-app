@@ -2139,9 +2139,9 @@ class ClientsScreen(Screen):
             sorted_dates = sorted(date_groups.keys(), key=date_sort_key, reverse=True)
 
             copy_lines = [
-                f"КЛИЕНТ: {client.get('name', '').upper()}",
-                f"ОБЩИЙ ДОЛГ: {rub(grand_total)} р",
-                "=" * 34
+                f"📋 {client.get('name', '').upper()}",
+                f"💰 ДОЛГ: {rub(grand_total)} р",
+                "━━━━━━━━━━━━━━━━"
             ]
 
             all_scroll = ScrollView()
@@ -2175,7 +2175,7 @@ class ClientsScreen(Screen):
                         btn_add_day.bind(on_release=lambda x, d=d_str: add_to_day(d))
                         hdr_row.add_widget(btn_add_day)
                     all_list.add_widget(hdr_row)
-                    copy_lines.append(f"\n{d_str}  (+{rub(day_total)} р):")
+                    copy_lines.append(f"\n📅 {d_str}  —  {rub(day_total)} р")
 
                     counter = 1
                     for item in items_for_day:
@@ -2202,11 +2202,17 @@ class ClientsScreen(Screen):
                         row_lbl.bind(texture_size=lambda s, ts: setattr(s, 'height', max(44, ts[1] + 8)))
                         all_list.add_widget(row_lbl)
 
-                        copy_lines.append(f"  {counter}) {raw_desc} = {sum_val} р  {badge_val}")
+                        _sz = raw_desc.replace('x', '×')
+                        _bd = f"  {badge_val.strip('[]')}" if badge_val else ""
+                        if price_val:
+                            copy_lines.append(f"{counter}) {_sz}{_bd}")
+                            copy_lines.append(f"     {format_num_simple(price_val)} р/м² = {sum_val} р")
+                        else:
+                            copy_lines.append(f"{counter}) {_sz} = {sum_val} р")
                         counter += 1
 
-            copy_lines.append(f"\n{'=' * 34}")
-            copy_lines.append(f"ИТОГО ДОЛГ: {rub(grand_total)} р")
+            copy_lines.append("\n━━━━━━━━━━━━━━━━")
+            copy_lines.append(f"💰 ИТОГО ДОЛГ: {rub(grand_total)} р")
             copy_text = "\n".join(copy_lines)
 
             btn_copy = RoundedButton(
