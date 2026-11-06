@@ -681,6 +681,8 @@ class TapTextRow(ButtonBehavior, Label):
         with self.canvas.before:
             Color(*((0.2, 0.26, 0.36, 1) if self.state == 'down' else (0.12, 0.15, 0.21, 1)))
             RoundedRectangle(pos=self.pos, size=self.size, radius=[(12, 12)] * 4)
+            Color(0.92, 0.94, 0.97, 0.85)   # белая окантовка
+            Line(rounded_rectangle=(self.x + 1, self.y + 1, self.width - 2, self.height - 2, 12), width=1.3)
 
 
 class QuickDebtRow(ButtonBehavior, BoxLayout):
