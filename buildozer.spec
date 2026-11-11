@@ -9,7 +9,7 @@ source.include_exts = py,png,jpg,jpeg,json
 source.exclude_dirs = tests,backups,.git,signing,exports,import
 source.exclude_patterns = business_data.json*,run_checks.py
 
-version = 3.2
+version = 3.3
 
 requirements = python3,kivy==2.3.1,androidstorage4kivy==0.1.1
 

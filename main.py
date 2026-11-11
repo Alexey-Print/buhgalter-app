@@ -44,6 +44,7 @@ from kivy.core.window import Window
 from kivy.clock import Clock
 from kivy.animation import Animation
 from kivy.properties import ListProperty, NumericProperty
+from kivy.metrics import sp as _sp
 
 try:
     Window.softinput_mode = 'below_target'
@@ -67,7 +68,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.2"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.3"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1686,44 +1687,76 @@ class ClientsScreen(Screen):
         card.add_widget(r3)
         return card
 
+    # ── Общие детали окон прибыли (размеры от шрифта телефона — ничего не наезжает) ──
+    def _gr_auto_label(self, text, font='15sp', color=GR_SUB, halign='center', bold=False):
+        lbl = Label(text=text, markup=True, font_size=font, color=color, bold=bold,
+                    size_hint_y=None, height=_sp(24), halign=halign, valign='middle')
+        lbl.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)),
+                 texture_size=lambda s_, ts: setattr(s_, 'height', ts[1] + _sp(6)))
+        return lbl
+
+    def _gr_panel(self, widget_list, pad=12):
+        panel = BoxLayout(orientation='vertical', size_hint_y=None, padding=[_sp(pad)] * 4, spacing=_sp(4))
+        panel.bind(minimum_height=panel.setter('height'))
+
+        def _draw(w, *a):
+            w.canvas.before.clear()
+            with w.canvas.before:
+                Color(*GR_BORDER)
+                RoundedRectangle(pos=w.pos, size=w.size, radius=[(GR_RADIUS, GR_RADIUS)] * 4)
+                Color(*GR_PANEL)
+                RoundedRectangle(pos=(w.x + 2, w.y + 2), size=(w.width - 4, w.height - 4),
+                                 radius=[(GR_RADIUS - 2, GR_RADIUS - 2)] * 4)
+        panel.bind(pos=_draw, size=_draw)
+        for w in widget_list:
+            panel.add_widget(w)
+        return panel
+
+    def _gr_input(self, font='24sp', hint='0', numeric=True, text=''):
+        kw = dict(input_type='number', input_filter='float') if numeric else {}
+        ti = TextInput(text=text, hint_text=hint, multiline=False, font_size=font, halign='center',
+                       background_normal='', background_active='', background_color=(0.11, 0.13, 0.19, 1),
+                       foreground_color=(1, 1, 1, 1), hint_text_color=(0.5, 0.55, 0.62, 1),
+                       cursor_color=(0.2, 0.75, 0.84, 1), size_hint_y=None, **kw)
+        ti.height = ti.line_height + _sp(22)
+
+        def _vc(inst, *a):
+            inst.height = inst.line_height + _sp(22)
+            inst.padding = [_sp(8), (inst.height - inst.line_height) / 2.0, _sp(8), 0]
+        ti.bind(line_height=_vc)
+        _vc(ti)
+        return ti
+
     def show_current_profit_popup(self, *args):
         app = App.get_running_app()
         if not app:
             return
-        content = BoxLayout(orientation='vertical', spacing=10, padding=[18, 10, 18, 14])
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
         pop = TopMenuPopup(title="ТЕКУЩАЯ ПРИБЫЛЬ", content=content, size_hint=(0.94, 0.85))
-        info = Label(text="", markup=True, font_size='18sp', size_hint_y=None, height=120, halign='center', valign='middle')
-        info.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)),
-                  texture_size=lambda s_, ts: setattr(s_, 'height', ts[1] + 16))
-        content.add_widget(info)
+        pop.background_color = GR_BG
+        info = self._gr_auto_label("", font='20sp', color=GR_TEXT)
+        content.add_widget(self._gr_panel([info]))
 
         def show_info():
-            info.text = (f"[color=#AAB4C8]общая:[/color] [b][color=#8FE6B0]{rub(app.get_totals()[3])} р[/color][/b]\n"
+            info.text = (f"[color=#AAB4C8]общая:[/color] [b]{rub(app.get_totals()[3])} р[/b]\n"
                          f"[color=#AAB4C8]текущая:[/color] [b][color=#5FD3FF]{rub(app.current_profit())} р[/color][/b]")
         show_info()
-        f_amt, in_amt = self._labeled_field("СУММА, руб", "0")
-        f_amt.size_hint_y = None
-        f_amt.height = 130
-        content.add_widget(f_amt)
-        cap = Label(text="[b]ЗА ЧТО / КОМУ[/b]", markup=True, font_size='14sp', color=(0.78, 0.82, 0.88, 1),
-                    size_hint_y=None, height=30, halign='center', valign='middle')
-        cap.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
-        content.add_widget(cap)
-        in_note = TextInput(multiline=False, font_size='18sp', size_hint_y=None, height=84,
-                            hint_text="например: забрал себе, Олегу за краску",
-                            background_normal='', background_active='', background_color=(0.11, 0.13, 0.19, 1),
-                            foreground_color=(1, 1, 1, 1), cursor_color=(0.2, 0.75, 0.84, 1), padding=[12, 22, 12, 10])
+        content.add_widget(self._gr_auto_label("[b]СУММА, руб[/b]", font='14sp'))
+        in_amt = self._gr_input(font='24sp', hint='0')
+        content.add_widget(in_amt)
+        content.add_widget(self._gr_auto_label("[b]ЗА ЧТО / КОМУ[/b]", font='14sp'))
+        in_note = self._gr_input(font='16sp', hint='например: забрал себе', numeric=False)
+        in_note.halign = 'left'
         content.add_widget(in_note)
-        row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=80)
-        b_take = RoundedButton(text="− ВЫЧЕСТЬ", bg_color=(0.18, 0.48, 0.86, 1), bold=True, font_size='17sp', radius=16)
-        b_set = RoundedButton(text="СДЕЛАТЬ =", bg_color=(0.25, 0.32, 0.45, 1), bold=True, font_size='17sp', radius=16)
-        b_reset = RoundedButton(text="ОБНУЛИТЬ", bg_color=(0.32, 0.36, 0.44, 1), bold=True, font_size='17sp', radius=16)
+        row = BoxLayout(orientation='horizontal', spacing=_sp(6), size_hint_y=None, height=_sp(50))
+        b_take = RoundedButton(text="ВЫЧЕСТЬ", bg_color=GR_ACCENT, bold=True, font_size='13sp', radius=GR_RADIUS)
+        b_set = RoundedButton(text="СДЕЛАТЬ =", bg_color=GR_PANEL, border_color=GR_BORDER, bold=True, font_size='13sp', radius=GR_RADIUS)
+        b_reset = RoundedButton(text="ОБНУЛИТЬ", bg_color=GR_PANEL, border_color=GR_BORDER, bold=True, font_size='13sp', radius=GR_RADIUS)
         row.add_widget(b_take); row.add_widget(b_set); row.add_widget(b_reset)
         content.add_widget(row)
-        hint = Label(text="[color=#7A8494]ВЫЧЕСТЬ — текущая меньше на сумму · СДЕЛАТЬ = — текущая станет равна сумме · общая не меняется[/color]",
-                     markup=True, font_size='12sp', size_hint_y=None, height=60, halign='center', valign='top')
-        hint.bind(width=lambda s_, v: setattr(s_, 'text_size', (v, None)))
-        content.add_widget(hint)
+        content.add_widget(self._gr_auto_label(
+            "ВЫЧЕСТЬ — текущая меньше на сумму\nСДЕЛАТЬ = — текущая станет этой суммой\nобщая не меняется",
+            font='12sp', color=(0.55, 0.6, 0.66, 1)))
 
         def run(**kw):
             ok, msg = app.take_profit(note=in_note.text, **kw)
@@ -2764,59 +2797,21 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         if not app:
             return
-        scroll = ScrollView()
         tot_debt, _, banner_deficit, current_profit = app.get_totals()
-        content = BoxLayout(orientation='vertical', spacing=12, padding=[8, 15, 8, 15], size_hint_y=None)
-        content.bind(minimum_height=content.setter('height'))
-        pop = TopMenuPopup(title="ЧИСТАЯ ПРИБЫЛЬ", content=scroll, size_hint=(0.95, 0.85))
-        pop.title_size = '28sp'
-        pop.title_color = [0.56, 0.9, 0.69, 1]
-
-        # ── Карточка с текущей прибылью ──
-        profit_card = BoxLayout(orientation='vertical', size_hint_y=None, height=195, padding=[15, 14, 15, 14])
-        def _draw_profit_card(w, *a):
-            w.canvas.before.clear()
-            with w.canvas.before:
-                Color(0.12, 0.28, 0.18, 1)
-                RoundedRectangle(pos=w.pos, size=w.size, radius=[(16,16)]*4)
-                Color(0.2, 0.65, 0.35, 0.3)
-                RoundedRectangle(pos=(w.x+2, w.y+2), size=(w.width-4, w.height-4), radius=[(14,14)]*4)
-        profit_card.bind(pos=_draw_profit_card, size=_draw_profit_card)
-        lbl_subtitle = Label(text="[color=#AAAAAA]ОБЩАЯ ПРИБЫЛЬ[/color]", markup=True, font_size='15sp',
-                             halign='center', valign='bottom', size_hint_y=0.3)
-        lbl_subtitle.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        if current_profit >= 0:
-            profit_color = "#8FE6B0"
-        else:
-            profit_color = "#FF6B6B"
-        lbl_profit_val = Label(
-            text=f"[b][color={profit_color}]{rub(current_profit)} руб[/color][/b]",
-            markup=True, font_size='36sp', halign='center', valign='middle', size_hint_y=0.7)
-        lbl_profit_val.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        profit_card.add_widget(lbl_subtitle)
-        profit_card.add_widget(lbl_profit_val)
-        content.add_widget(profit_card)
-
-        # ── Поле ввода ──
-        lbl_edit = BgLabel(text="[b]ИЗМЕНИТЬ ЗНАЧЕНИЕ:[/b]", markup=True,
-                         font_size='18sp', halign='center', valign='middle',
-                         size_hint_y=None, height=50, radius=10)
-        lbl_edit.bg_color = [0.18, 0.18, 0.22, 1]
-        lbl_edit.color = (0.75, 0.85, 1, 1)
-        lbl_edit.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        content.add_widget(lbl_edit)
-        in_wrap = BoxLayout(orientation='horizontal', size_hint_y=None, height=108)
-        in_wrap.add_widget(Widget(size_hint_x=0.18))
-        in_profit = TextInput(background_normal='', background_active='', background_color=(0.17, 0.20, 0.27, 1), foreground_color=(1, 1, 1, 1), hint_text_color=(0.55, 0.6, 0.68, 1), cursor_color=(0.2, 0.75, 0.84, 1), text=format_num_simple(current_profit), input_type='number',
-                              input_filter='float', multiline=False, font_size='26sp',
-                              halign='center', size_hint_x=0.64)
-        def _center_input(inst, *a):
-            top = max(6, (inst.height - inst.line_height) / 2 - 6)
-            inst.padding = [10, top, 10, 4]
-        in_profit.bind(height=_center_input, line_height=_center_input)
-        in_wrap.add_widget(in_profit)
-        in_wrap.add_widget(Widget(size_hint_x=0.18))
-        content.add_widget(in_wrap)
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        pop = TopMenuPopup(title="ОБЩАЯ ПРИБЫЛЬ", content=content, size_hint=(0.94, 0.85))
+        pop.background_color = GR_BG
+        col = "#8FE6B0" if current_profit >= 0 else "#FF6B6B"
+        sign = "" if current_profit >= 0 else "-"
+        content.add_widget(self._gr_panel([
+            self._gr_auto_label("за всё время", font='14sp'),
+            self._gr_auto_label(f"[b][color={col}]{sign}{rub(abs(current_profit))} руб[/color][/b]", font='34sp', color=GR_TEXT),
+            self._gr_auto_label("считается в момент заказа: оплата долга её не меняет. "
+                                "Пока висит минус рулона — заказы сначала гасят его", font='12sp',
+                                color=(0.55, 0.6, 0.66, 1))]))
+        content.add_widget(self._gr_auto_label("[b]ИЗМЕНИТЬ НА[/b]", font='14sp'))
+        in_profit = self._gr_input(font='24sp', hint='0', text=format_num_simple(current_profit))
+        content.add_widget(in_profit)
 
         def save_profit(val):
             if getattr(pop, 'is_dismissing_flag', False): return
@@ -2834,39 +2829,17 @@ class ClientsScreen(Screen):
                 return
             self.refresh_list(); pop.dismiss()
 
-        btn_save = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.15, 0.55, 0.35, 1),
-                                 height=90, size_hint_y=None, bold=True, font_size='22sp')
+        row = BoxLayout(orientation='horizontal', spacing=_sp(6), size_hint_y=None, height=_sp(50))
+        btn_save = RoundedButton(text="СОХРАНИТЬ", bg_color=GR_ACCENT, bold=True, font_size='16sp', radius=GR_RADIUS)
         btn_save.bind(on_release=lambda x: save_profit(safe_float(in_profit.text)))
-        content.add_widget(btn_save)
-
-        # ── Разделитель ──
-        content.add_widget(Widget(size_hint_y=None, height=15))
-        sep_lbl = Label(text="[color=#777777]— — —  СБРОС  — — —[/color]", markup=True,
-                        font_size='14sp', halign='center', size_hint_y=None, height=25)
-        sep_lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        content.add_widget(sep_lbl)
-
-        btn_zero = RoundedButton(text="ОБНУЛИТЬ ПРИБЫЛЬ", bg_color=(0.65, 0.25, 0.2, 1),
-                                 height=100, size_hint_y=None, bold=True, font_size='20sp')
+        btn_zero = RoundedButton(text="ОБНУЛИТЬ ПРИБЫЛЬ", bg_color=(0.45, 0.17, 0.17, 1), border_color=GR_BORDER,
+                                 bold=True, font_size='14sp', radius=GR_RADIUS)
         btn_zero.bind(on_release=lambda x: save_profit(0.0))
-        content.add_widget(btn_zero)
-
-
-        content.add_widget(Widget(size_hint_y=None, height=25))
-        bottom_profit = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=110, padding=[15, 0, 15, 0])
-        btn_back_pr = RoundedButton(text="НАЗАД", bg_color=(1, 0.45, 0, 1), font_size='24sp', bold=True, size_hint_x=0.45)
-        def _pr_back(x):
-            if getattr(pop, 'is_dismissing_flag', False): return
-            pop.is_dismissing_flag = True
-            pop.dismiss()
-        btn_back_pr.bind(on_release=_pr_back)
-        btn_close_pr = CancelButton(text="ЗАКРЫТЬ", bg_color=(0.6, 0.2, 0.2, 1), font_size='24sp', bold=True, size_hint_x=0.55)
-        btn_close_pr.bind(on_release=_pr_back)
-        bottom_profit.add_widget(btn_back_pr)
-        bottom_profit.add_widget(btn_close_pr)
-        content.add_widget(bottom_profit)
-        content.add_widget(Widget(size_hint_y=None, height=350))
-        scroll.add_widget(content); pop.open()
+        row.add_widget(btn_save); row.add_widget(btn_zero)
+        content.add_widget(row)
+        content.add_widget(Widget())
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
 
     # ── Экспорт / импорт всей базы ──
     def export_database(self):
