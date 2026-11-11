@@ -68,7 +68,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.3"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.4"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1644,6 +1644,9 @@ class ClientsScreen(Screen):
             ptxt = f"[b][color=#FFFFFF]ОБЩАЯ: [/color][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
         else:
             ptxt = f"[b][color=#FF6B6B]ОБЩАЯ: -{rub(abs(profit_val))} р[/color][/b]"
+        _pct = app.profit_percent()
+        if _pct is not None:
+            ptxt += f"  [color=#FFD54F][b]{_pct}%[/b][/color]"
         pl = Label(text=ptxt, markup=True, font_size='23sp', halign='center', valign='middle')
         pl.bind(size=lambda s, v: setattr(s, 'text_size', v))
         self._fit_font(pl, max_sp=30, min_sp=12)
@@ -2806,6 +2809,9 @@ class ClientsScreen(Screen):
         content.add_widget(self._gr_panel([
             self._gr_auto_label("за всё время", font='14sp'),
             self._gr_auto_label(f"[b][color={col}]{sign}{rub(abs(current_profit))} руб[/color][/b]", font='34sp', color=GR_TEXT),
+            self._gr_auto_label(
+                (f"[b][color=#FFD54F]{app.profit_percent()}%[/color][/b] от вложенных денег"
+                 if app.profit_percent() is not None else "% появится после заказов"), font='15sp', color=GR_TEXT),
             self._gr_auto_label("считается в момент заказа: оплата долга её не меняет. "
                                 "Пока висит минус рулона — заказы сначала гасят его", font='12sp',
                                 color=(0.55, 0.6, 0.66, 1))]))
@@ -4959,6 +4965,26 @@ class BusinessApp(App):
         if abs(real_profit) < 0.01:
             real_profit = 0.0
         return tot_debt, my_debt, banner_deficit, real_profit
+
+    def profit_percent(self):
+        """% прибыли от вложенных денег по заказам из истории прибыли:
+        вложено = сумма заказов − прибыль (исполнителю, на рулон, такси). None — считать не из чего."""
+        orders = {}
+        for c in self.clients:
+            for h in c.get('history', []) + c.get('archived_history', []):
+                if h.get('oid'):
+                    orders[h['oid']] = h
+        total = profit = 0.0
+        for p_ in getattr(self, 'profit_log', None) or []:
+            h = orders.get(p_.get('oid'))
+            if h is None:
+                continue
+            total += safe_float(h.get('sum'))
+            profit += safe_float(p_.get('profit'))
+        invested = total - profit
+        if invested < 1:
+            return None
+        return round(profit / invested * 100)
 
     def current_profit(self):
         """Текущая прибыль = общая минус всё, что отдано («ОТДАЛ»). Общая не меняется."""

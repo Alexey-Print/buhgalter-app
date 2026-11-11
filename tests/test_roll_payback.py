@@ -57,6 +57,14 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.profit(), 0)
         self.assertEqual(self.black()['debt'], '53')
 
+    def test_profit_percent_from_invested(self):
+        self.assertIsNone(self.app.profit_percent())
+        self.assertTrue(purchase_banner(self.app, 'black', 900)[0])
+        self.order(1000)                      # 900 в рулон, 100 прибыль -> 100 / 900
+        self.assertEqual(self.app.profit_percent(), 11)
+        self.order(1000)                      # +1000 прибыль -> 1100 / 900
+        self.assertEqual(self.app.profit_percent(), 122)
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()
