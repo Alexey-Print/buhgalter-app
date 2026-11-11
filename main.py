@@ -1630,16 +1630,16 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         tot_debt, my_debt, _, profit_val = app.get_totals()
         card = self._make_section("ОБЩИЕ ИТОГИ", (0.5, 0.81, 0.6, 1), (0.5, 0.81, 0.6, 1), hdr_text=(0.05, 0.23, 0.11, 1))
-        r1 = BoxLayout(size_hint_y=None, height=112)
+        r1 = BoxLayout(size_hint_y=None, height=130)
         l1 = Label(text=f"[b][color=#FFFFFF]ДОЛЖНЫ: [/color][color=#8FE6B0]{rub(tot_debt)} р[/color][/b]",
                    markup=True, font_size='30sp', halign='center', valign='middle')
         l1.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(l1, max_sp=40, min_sp=14)
+        self._fit_font(l1, max_sp=46, min_sp=14)
         l1.bind(pos=lambda *a: self._draw_tap_bg(l1),
                 size=lambda *a: self._draw_tap_bg(l1))
         r1.add_widget(l1)
         card.add_widget(r1)
-        r2 = BoxLayout(size_hint_y=None, height=92, spacing=6)
+        r2 = BoxLayout(size_hint_y=None, height=118, spacing=6)
         if profit_val >= 0:
             ptxt = f"[b][color=#FFFFFF]ОБЩАЯ: [/color][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
         else:
@@ -1649,16 +1649,16 @@ class ClientsScreen(Screen):
             ptxt += f"  [color=#FFD54F][b]{_pct}%[/b][/color]"
         pl = Label(text=ptxt, markup=True, font_size='23sp', halign='center', valign='middle')
         pl.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(pl, max_sp=30, min_sp=12)
+        self._fit_font(pl, max_sp=38, min_sp=12)
         pclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
         pclick.add_widget(pl)
         pclick.bind(on_release=lambda x: self.show_profit_correction_popup())
         pclick.bind(pos=lambda *a: self._draw_tap_bg(pclick),
                     size=lambda *a: self._draw_tap_bg(pclick),
                     state=lambda *a: self._draw_tap_bg(pclick))
-        pedit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, 1), width=216, radius=16)
+        pedit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, 1), width=150, radius=16)
         pedit.bind(on_release=lambda x: self.show_profit_correction_popup())
-        phist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=156, radius=16, font_size='18sp', bold=True)
+        phist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=130, radius=16, font_size='18sp', bold=True)
         phist.bind(on_release=lambda x: self.show_profit_history_popup())
         r2.add_widget(pclick)
         r2.add_widget(phist)
@@ -1666,23 +1666,23 @@ class ClientsScreen(Screen):
         card.add_widget(r2)
         # текущая прибыль: уменьшается, когда «ОТДАЛ»; общая остаётся
         cur = app.current_profit()
-        r3 = BoxLayout(size_hint_y=None, height=92, spacing=6)
+        r3 = BoxLayout(size_hint_y=None, height=118, spacing=6)
         if cur >= 0:
             ctxt = f"[b][color=#FFFFFF]ТЕКУЩАЯ: [/color][color=#5FD3FF]{rub(cur)} р[/color][/b]"
         else:
             ctxt = f"[b][color=#FF6B6B]ТЕКУЩАЯ: -{rub(abs(cur))} р[/color][/b]"
         cl = Label(text=ctxt, markup=True, font_size='23sp', halign='center', valign='middle')
         cl.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(cl, max_sp=30, min_sp=12)
+        self._fit_font(cl, max_sp=38, min_sp=12)
         cclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
         cclick.add_widget(cl)
         cclick.bind(on_release=lambda x: self.show_current_profit_popup())
         cclick.bind(pos=lambda *a: self._draw_tap_bg(cclick),
                     size=lambda *a: self._draw_tap_bg(cclick),
                     state=lambda *a: self._draw_tap_bg(cclick))
-        chist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=156, radius=16, font_size='18sp', bold=True)
+        chist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=130, radius=16, font_size='18sp', bold=True)
         chist.bind(on_release=lambda x: self.show_current_profit_history())
-        cedit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, 1), width=216, radius=16)
+        cedit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, 1), width=150, radius=16)
         cedit.bind(on_release=lambda x: self.show_current_profit_popup())
         r3.add_widget(cclick)
         r3.add_widget(chist)
