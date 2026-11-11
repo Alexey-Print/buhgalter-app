@@ -68,7 +68,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.4"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.5"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3432,13 +3432,9 @@ class ClientsScreen(Screen):
                 lbl_source.text = "[color=#FFFFFF][b]Источник печати[/b][/color]"
             for b, c_idx in creditor_btns:
                 Animation.cancel_all(b)
-                if c_idx is None:
-                    if is_selected:
-                        b.height = 110
-                        b.opacity = 1
-                    else:
-                        b.height = 0
-                        b.opacity = 0
+                if c_idx is None:          # «Свой рулон» виден всегда (раньше — только после выбора исполнителя)
+                    b.height = 110
+                    b.opacity = 1
                 if state['creditor_idx'] == c_idx:
                     b.bg_color = list(GR_ACCENT)
                     b.border_color = [0, 0, 0, 0]
