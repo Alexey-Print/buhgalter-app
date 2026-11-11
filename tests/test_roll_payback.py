@@ -80,7 +80,7 @@ class RollPaybackTests(unittest.TestCase):
         self.order(1000, mode='plenka_matte')
         self.assertEqual(self.profit(), 500)
         self.assertEqual(self.app.profit_log[-1]['to_roll'], 500)
-        self.assertEqual(len(self.app.rolls), n_rolls)  # метры банера плёнка не трогает
+        self.assertEqual(self.app.rolls[-1]['color'], 'plenka')   # рулон плёнки в остатках
         self.assertEqual(self.app.get_totals()[0], 2500)  # «ПЛЁНКА» не считается долгом клиента
         self.assertTrue(reverse_order(self.app, self.sasha, first)[0])
         self.assertEqual(self.plenka()['debt'], '1 500')

@@ -68,7 +68,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.6"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.7"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -2959,9 +2959,8 @@ class ClientsScreen(Screen):
 
         btn_save.bind(on_release=save_zakupka)
         content.add_widget(in_sum)
-        if mode != 'plenka':             # для плёнки метры рулона не ведутся
-            content.add_widget(lbl_roll)
-            content.add_widget(roll_row)
+        content.add_widget(lbl_roll)
+        content.add_widget(roll_row)
         content.add_widget(btn_save)
         content.add_widget(self.get_bottom_buttons(pop, prev_cb, cancel_text="ЗАКРЫТЬ"))
         content.add_widget(Widget(size_hint_y=None, height=350))
@@ -2991,9 +2990,9 @@ class ClientsScreen(Screen):
                 empty.bind(size=lambda s, v: setattr(s, 'text_size', v))
                 grid.add_widget(empty)
             for ri, roll in enumerate(app.rolls):
-                is_white = roll.get('color', 'white') == 'white'
-                disp = "БЕЛЫЙ" if is_white else "ЧЁРНЫЙ"
-                accent = (0.66, 0.3, 1.0) if is_white else (0.30, 0.55, 1.0)
+                _rc = roll.get('color', 'white')
+                disp = {"white": "БЕЛЫЙ", "plenka": "ПЛЁНКА"}.get(_rc, "ЧЁРНЫЙ")
+                accent = {"white": (0.66, 0.3, 1.0), "plenka": (0.25, 0.8, 0.5)}.get(_rc, (0.30, 0.55, 1.0))
                 w = roll.get('width', '0')
                 rem = format_num_simple(roll.get('remain', '0'))
                 tot = format_num_simple(roll.get('total', '0'))
@@ -3046,19 +3045,25 @@ class ClientsScreen(Screen):
         color_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=100)
         btn_white = RoundedButton(text="БЕЛЫЙ", bg_color=(0.95, 0.95, 0.95, 1), color=(0, 0, 0, 1), bold=True, radius=20)
         btn_black = RoundedButton(text="ЧЁРНЫЙ", bg_color=(0.1, 0.1, 0.1, 1), color=(1, 1, 1, 1), bold=True, radius=20)
+        btn_plenka = RoundedButton(text="ПЛЁНКА", bg_color=(0.12, 0.45, 0.3, 1), color=(1, 1, 1, 1), bold=True, radius=20)
 
         def paint_colors():
-            if state['color'] == 'white':
-                btn_white.bg_color = [0.2, 0.7, 0.3, 1]; btn_white.color = (1, 1, 1, 1)
-                btn_black.bg_color = [0.1, 0.1, 0.1, 1]; btn_black.color = (1, 1, 1, 1)
-            else:
-                btn_black.bg_color = [0.2, 0.7, 0.3, 1]; btn_black.color = (1, 1, 1, 1)
-                btn_white.bg_color = [0.95, 0.95, 0.95, 1]; btn_white.color = (0, 0, 0, 1)
+            base = {'white': ([0.95, 0.95, 0.95, 1], (0, 0, 0, 1)), 'black': ([0.1, 0.1, 0.1, 1], (1, 1, 1, 1)),
+                    'plenka': ([0.12, 0.45, 0.3, 1], (1, 1, 1, 1))}
+            for key, btn in (('white', btn_white), ('black', btn_black), ('plenka', btn_plenka)):
+                if state['color'] == key:
+                    btn.bg_color = [0.2, 0.7, 0.3, 1]; btn.color = (1, 1, 1, 1)
+                    btn.border_color = [1, 1, 1, 1]
+                else:
+                    btn.bg_color, btn.color = base[key]
+                    btn.border_color = [0, 0, 0, 0]
         btn_white.bind(on_release=lambda x: (state.update(color='white'), paint_colors()))
         btn_black.bind(on_release=lambda x: (state.update(color='black'), paint_colors()))
+        btn_plenka.bind(on_release=lambda x: (state.update(color='plenka'), paint_colors()))
         paint_colors()
         color_row.add_widget(btn_white)
         color_row.add_widget(btn_black)
+        color_row.add_widget(btn_plenka)
         content.add_widget(Label(text="[b]ЦВЕТ[/b]", markup=True, font_size='15sp', color=(0.6, 0.65, 0.72, 1), size_hint_y=None, height=30))
         content.add_widget(color_row)
 

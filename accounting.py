@@ -265,7 +265,7 @@ def purchase_banner(app, color, amount, width='', length=0):
         client['zakupka_total'] = money(total + amount)
         from datetime import datetime
         client.setdefault('purchase_log', []).append({'date': datetime.now().strftime('%d.%m.%y %H:%M'), 'sum': money(amount)})
-        if length > 0 and color != 'plenka':
+        if length > 0:
             app.rolls.append({'color': color, 'width': str(width).strip() or '0', 'total': money(length), 'remain': money(length)})
         app._op = 'закупка плёнки' if color == 'plenka' else 'закупка банера'
         if app.save_data() is not True:
