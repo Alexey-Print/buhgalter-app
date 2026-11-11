@@ -68,7 +68,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.7"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.8"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3332,11 +3332,13 @@ class ClientsScreen(Screen):
         head.add_widget(lbl_sub)
         content.add_widget(head)
         state = {'creditor_idx': creditor_idx}
-        top_box = BoxLayout(orientation='vertical', spacing=14, size_hint_y=None, height=234)
+        top_box = BoxLayout(orientation='vertical', spacing=14, size_hint_y=None, height=344)
         b_baner = RoundedButton(text="Банер", height=110, size_hint_y=None, font_size='26sp', bold=True, radius=GR_RADIUS)
         b_plenka = RoundedButton(text="Плёнка", height=110, size_hint_y=None, font_size='26sp', bold=True, radius=GR_RADIUS)
+        b_cm = RoundedButton(text="Материал клиента", height=96, size_hint_y=None, font_size='22sp', bold=True, radius=GR_RADIUS)
         top_box.add_widget(b_baner)
         top_box.add_widget(b_plenka)
+        top_box.add_widget(b_cm)
         content.add_widget(top_box)
         source_box = BoxLayout(orientation='vertical', spacing=0, size_hint_y=None, height=170)
         def _draw_arrows_fn(w, direction):
@@ -3416,17 +3418,22 @@ class ClientsScreen(Screen):
                 lbl_source.text = f"[color=#ADB5BF]Печать:[/color] [color=#FFFFFF][b]{cr_disp}[/b][/color]"
                 b_baner.color = GR_TEXT
                 b_plenka.color = GR_TEXT
+                b_cm.color = GR_TEXT
                 b_baner.bg_color = list(GR_ACCENT)
                 b_plenka.bg_color = list(GR_ACCENT)
+                b_cm.bg_color = list(GR_ACCENT)
             else:
                 Animation.cancel_all(b_baner)
                 Animation.cancel_all(b_plenka)
+                Animation.cancel_all(b_cm)
                 Animation.cancel_all(arrow_down_w)
                 Animation.cancel_all(arrow_up_w)
                 b_baner.bg_color = list(GR_ACCENT_DIM)
                 b_plenka.bg_color = list(GR_ACCENT_DIM)
+                b_cm.bg_color = list(GR_ACCENT_DIM)
                 b_baner.color = (0.55, 0.64, 0.76, 1)
                 b_plenka.color = (0.55, 0.64, 0.76, 1)
+                b_cm.color = (0.55, 0.64, 0.76, 1)
                 source_frame._show_border = True
                 _draw_frame(source_frame)
                 arrow_up_w.height = 0
@@ -3508,7 +3515,7 @@ class ClientsScreen(Screen):
         btn_add = RoundedButton(text="+ Добавить имя", bg_color=GR_BG, height=96, size_hint_y=None, bold=True, font_size='21sp', radius=GR_RADIUS)
         btn_add.border_color = list(GR_ACCENT)
         def on_add_click(x):
-            Animation.cancel_all(lbl_source); Animation.cancel_all(b_baner); Animation.cancel_all(b_plenka)
+            Animation.cancel_all(lbl_source); Animation.cancel_all(b_baner); Animation.cancel_all(b_plenka); Animation.cancel_all(b_cm)
             for b, _ in creditor_btns: Animation.cancel_all(b)
             self.open_quick_add_creditor(pop, idx)
         btn_add.bind(on_release=on_add_click)
@@ -3523,7 +3530,7 @@ class ClientsScreen(Screen):
         def _do_back_nav(x):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
-            Animation.cancel_all(lbl_source); Animation.cancel_all(b_baner); Animation.cancel_all(b_plenka)
+            Animation.cancel_all(lbl_source); Animation.cancel_all(b_baner); Animation.cancel_all(b_plenka); Animation.cancel_all(b_cm)
             for b, _ in creditor_btns: Animation.cancel_all(b)
             pop.dismiss()
             if prev_cb: Clock.schedule_once(lambda dt: prev_cb(), 0.15)
@@ -3533,7 +3540,7 @@ class ClientsScreen(Screen):
         def _do_close_nav(x):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
-            Animation.cancel_all(lbl_source); Animation.cancel_all(b_baner); Animation.cancel_all(b_plenka)
+            Animation.cancel_all(lbl_source); Animation.cancel_all(b_baner); Animation.cancel_all(b_plenka); Animation.cancel_all(b_cm)
             for b, _ in creditor_btns: Animation.cancel_all(b)
             pop.dismiss()
         btn_close_nav.bind(on_release=_do_close_nav)
@@ -3549,8 +3556,14 @@ class ClientsScreen(Screen):
             if state['creditor_idx'] == "unselected": return
             self.safe_transition(pop, self.show_price_popup, idx, mode="plenka", via_malevich=(state['creditor_idx'] is not None), creditor_idx=state['creditor_idx'], prev_cb=lambda p=None: self.show_client_choice_menu(idx, creditor_idx=state['creditor_idx'], prev_cb=p))
 
+        def on_cm_click(x):
+            # Материал клиента: только печать — рулон/плёнку не гасит, метры не списывает
+            if state['creditor_idx'] == "unselected": return
+            self.safe_transition(pop, self.show_price_popup, idx, mode="client_material", via_malevich=(state['creditor_idx'] is not None), creditor_idx=state['creditor_idx'], prev_cb=lambda p=None: self.show_client_choice_menu(idx, creditor_idx=state['creditor_idx'], prev_cb=p))
+
         b_baner.bind(on_release=on_baner_click)
         b_plenka.bind(on_release=on_plenka_click)
+        b_cm.bind(on_release=on_cm_click)
 
         def stop_animations(*args):
             Animation.cancel_all(lbl_source)
@@ -3559,6 +3572,7 @@ class ClientsScreen(Screen):
             Animation.cancel_all(mid_arrow_w)
             Animation.cancel_all(b_baner)
             Animation.cancel_all(b_plenka)
+            Animation.cancel_all(b_cm)
             for b, _ in creditor_btns:
                 Animation.cancel_all(b)
         pop.bind(on_dismiss=stop_animations)
@@ -3588,7 +3602,7 @@ class ClientsScreen(Screen):
         self.price_grid = GridLayout(cols=2, spacing=12, size_hint_y=None, height=220)
         self.in_p = TextInput(background_normal='', background_active='', background_color=(0.17, 0.20, 0.27, 1), foreground_color=(1, 1, 1, 1), hint_text_color=(0.55, 0.6, 0.68, 1), cursor_color=(0.2, 0.75, 0.84, 1), text=str(app.prices[0] if "banner" in mode else app.plenka_prices[0]), hint_text="Цена...", input_type='number', input_filter='float', multiline=False, font_size='32sp', halign='center', size_hint_y=None, height=110)
         self.build_price_grid(mode)
-        titles = {"banner_white": "ВЫБОР ЦЕНЫ (БЕЛЫЙ БАНЕР)", "banner_black": "ВЫБОР ЦЕНЫ (ЧЕРНЫЙ БАНЕР)", "malevich_banner": "МАЛЕВИЧ: ВЫБОР ЦЕНЫ БАНЕРА", "malevich_plenka_gloss": "МАЛЕВИЧ: ПЛЕНКА ГЛЯНЕЦ", "malevich_plenka_matte": "МАЛЕВИЧ: ПЛЕНКА МАТОВАЯ"}
+        titles = {"client_material": "ЦЕНА ПЕЧАТИ (МАТЕРИАЛ КЛИЕНТА)", "banner_white": "ВЫБОР ЦЕНЫ (БЕЛЫЙ БАНЕР)", "banner_black": "ВЫБОР ЦЕНЫ (ЧЕРНЫЙ БАНЕР)", "malevich_banner": "МАЛЕВИЧ: ВЫБОР ЦЕНЫ БАНЕРА", "malevich_plenka_gloss": "МАЛЕВИЧ: ПЛЕНКА ГЛЯНЕЦ", "malevich_plenka_matte": "МАЛЕВИЧ: ПЛЕНКА МАТОВАЯ"}
         pop = AppPopup(title=titles.get(mode, "ВЫБОР ЦЕНЫ (ПЛЕНКА)"), content=scroll, size_hint=(0.9, 0.85))
         btn_next = RoundedButton(text="ДАЛЕЕ >>>", bg_color=(0.2, 0.65, 0.42, 1), height=135, size_hint_y=None, bold=True, font_size='26sp')
 
@@ -3663,9 +3677,9 @@ class ClientsScreen(Screen):
         c_name = app.clients[idx].get('name', '').upper()
         cr_name = app.clients[creditor_idx].get('name', '').upper() if creditor_idx is not None else "КРЕДИТОРА"
         self.current_calc_price, self.current_calc_mode = float(price), mode
-        descs = {"banner_white": "БЕЛЫЙ БАНЕР", "banner_black": "ЧЕРНЫЙ БАНЕР", "malevich_banner": "БАНЕР", "plenka_gloss": "ПЛЕНКА ГЛЯНЕЦ", "plenka_matte": "ПЛЕНКА МАТОВАЯ"}
-        badges = {"banner_white": "Б-БАН", "banner_black": "Ч-БАН", "malevich_banner": "БАН", "plenka_gloss": "П-ГЛ", "plenka_matte": "П-МТ"}
-        bgs = {"banner_white": (0.05, 0.3, 0.65, 1), "banner_black": (0.15, 0.15, 0.15, 1), "malevich_banner": (0.1, 0.45, 0.85, 1), "plenka_gloss": (0.15, 0.6, 0.35, 1), "plenka_matte": (0.11, 0.48, 0.28, 1)}
+        descs = {"client_material": "МАТ. КЛИЕНТА", "banner_white": "БЕЛЫЙ БАНЕР", "banner_black": "ЧЕРНЫЙ БАНЕР", "malevich_banner": "БАНЕР", "plenka_gloss": "ПЛЕНКА ГЛЯНЕЦ", "plenka_matte": "ПЛЕНКА МАТОВАЯ"}
+        badges = {"client_material": "М-КЛ", "banner_white": "Б-БАН", "banner_black": "Ч-БАН", "malevich_banner": "БАН", "plenka_gloss": "П-ГЛ", "plenka_matte": "П-МТ"}
+        bgs = {"client_material": (0.45, 0.32, 0.12, 1), "banner_white": (0.05, 0.3, 0.65, 1), "banner_black": (0.15, 0.15, 0.15, 1), "malevich_banner": (0.1, 0.45, 0.85, 1), "plenka_gloss": (0.15, 0.6, 0.35, 1), "plenka_matte": (0.11, 0.48, 0.28, 1)}
         _is_creditor_client = app.clients[idx].get('is_creditor')
         _show_print_cost = via_malevich and not _is_creditor_client
 
@@ -3879,7 +3893,7 @@ class ClientsScreen(Screen):
                 p_scroll = ScrollView()
                 p_content = BoxLayout(orientation='vertical', spacing=15, padding=[15, 20, 15, 20], size_hint_y=None)
                 p_content.bind(minimum_height=p_content.setter('height'))
-                _ptitles = {"malevich_banner": "ЦЕНА (БАНЕР)", "banner_white": "ЦЕНА (БЕЛЫЙ БАНЕР)", "banner_black": "ЦЕНА (ЧЕРНЫЙ БАНЕР)", "malevich_plenka_gloss": "ЦЕНА (ПЛЕНКА ГЛЯНЕЦ)", "malevich_plenka_matte": "ЦЕНА (ПЛЕНКА МАТОВАЯ)", "plenka": "ЦЕНА (ПЛЕНКА)"}
+                _ptitles = {"client_material": "ЦЕНА ПЕЧАТИ (МАТЕРИАЛ КЛИЕНТА)", "malevich_banner": "ЦЕНА (БАНЕР)", "banner_white": "ЦЕНА (БЕЛЫЙ БАНЕР)", "banner_black": "ЦЕНА (ЧЕРНЫЙ БАНЕР)", "malevich_plenka_gloss": "ЦЕНА (ПЛЕНКА ГЛЯНЕЦ)", "malevich_plenka_matte": "ЦЕНА (ПЛЕНКА МАТОВАЯ)", "plenka": "ЦЕНА (ПЛЕНКА)"}
                 p_pop = TopMenuPopup(title=_ptitles.get(c_mode, "ВЫБОР ЦЕНЫ"), content=p_scroll, size_hint=(0.9, 0.85))
                 p_grid = GridLayout(cols=2, spacing=12, size_hint_y=None, height=220)
                 prices = app.prices if "banner" in c_mode else app.plenka_prices

@@ -86,6 +86,22 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.plenka()['debt'], '1 500')
         self.assertEqual(main.check_integrity(self.app), [])
 
+    def test_client_material_does_not_touch_rolls(self):
+        self.assertTrue(purchase_banner(self.app, 'black', 1000)[0])
+        self.assertTrue(purchase_banner(self.app, 'plenka', 1000)[0])
+        self.order(800, mode='client_material')               # своя печать на материале клиента
+        self.assertEqual(self.profit(), 800)
+        self.assertEqual((self.black()['debt'], self.plenka()['debt']), ('1 000', '1 000'))
+        oleg = {'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []}
+        self.app.clients.append(oleg)
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        cr = len(self.app.clients) - 1
+        self.assertTrue(self.screen._final_save(idx, '3 000 руб', None, 'client_material', print_cost=2000,
+                                                via_malevich=True, creditor_idx=cr, order_desc='10м2'))
+        self.assertEqual(self.profit(), 1800)                 # 3000 − 2000 Олегу
+        self.assertEqual(oleg['debt'], '2 000')
+        self.assertEqual(main.check_integrity(self.app), [])
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()
