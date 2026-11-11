@@ -67,7 +67,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.1"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.2"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1640,9 +1640,9 @@ class ClientsScreen(Screen):
         card.add_widget(r1)
         r2 = BoxLayout(size_hint_y=None, height=92, spacing=6)
         if profit_val >= 0:
-            ptxt = f"[b][color=#FFFFFF]ПРИБЫЛЬ: [/color][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
+            ptxt = f"[b][color=#FFFFFF]ОБЩАЯ: [/color][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
         else:
-            ptxt = f"[b][color=#FF6B6B]ПРИБЫЛЬ: -{rub(abs(profit_val))} р[/color][/b]"
+            ptxt = f"[b][color=#FF6B6B]ОБЩАЯ: -{rub(abs(profit_val))} р[/color][/b]"
         pl = Label(text=ptxt, markup=True, font_size='23sp', halign='center', valign='middle')
         pl.bind(size=lambda s, v: setattr(s, 'text_size', v))
         self._fit_font(pl, max_sp=30, min_sp=12)
@@ -1801,7 +1801,7 @@ class ClientsScreen(Screen):
         pop.title_size = '18sp'
         pop.background_color = (0.043, 0.055, 0.08, 1)
         legend = Label(text="", markup=True, font_size='13sp', size_hint_y=None, height=68, halign='center', valign='middle')
-        legend.text = "[color=#8FE6B0]\u0437\u0435\u043b\u0451\u043d\u044b\u0439 \u2014 \u0447\u0438\u0441\u0442\u0430\u044f \u043f\u0440\u0438\u0431\u044b\u043b\u044c[/color]\n[color=#FFB347]\u043e\u0440\u0430\u043d\u0436\u0435\u0432\u044b\u0439 \u2014 \u043f\u0440\u0435\u0434\u043f\u043e\u043b\u0430\u0433\u0430\u0435\u043c\u0430\u044f[/color]"
+        legend.text = "[color=#8FE6B0]зелёный — прибыль[/color]\n[color=#8FB8FF]синий — ушло на оплату рулона[/color]"
         legend.bind(size=lambda s, v: setattr(s, 'text_size', v))
         if not log:
             empty = Label(text="[color=#5A6472]\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0437\u0430\u043f\u0438\u0441\u0435\u0439.\n\u041d\u043e\u0432\u044b\u0435 \u0437\u0430\u043a\u0430\u0437\u044b \u043f\u043e\u044f\u0432\u044f\u0442\u0441\u044f \u0437\u0434\u0435\u0441\u044c.[/color]",
@@ -1816,23 +1816,24 @@ class ClientsScreen(Screen):
                 except Exception:
                     return d or ''
             for it in reversed(log):
-                assumed = bool(it.get('assumed'))
                 pr = safe_float(it.get('profit', 0))
-                col = '#FFB347' if assumed else '#8FE6B0'
+                to_roll = safe_float(it.get('to_roll', 0))
+                col = '#8FE6B0' if pr >= 0 else '#FF6B6B'
                 sign = '+' if pr >= 0 else '-'
                 name = (it.get('name') or '').upper()
                 date = _sd(it.get('date') or '')
-                row = BoxLayout(orientation='horizontal', size_hint_y=None, height=90, padding=[16, 6, 16, 6])
+                row = BoxLayout(orientation='horizontal', size_hint_y=None, height=90, padding=[16, 10, 16, 10])
                 def _rb(w, *a):
                     w.canvas.before.clear()
                     with w.canvas.before:
                         Color(0.1, 0.12, 0.16, 1)
                         RoundedRectangle(pos=w.pos, size=w.size, radius=[(14, 14)] * 4)
                 row.bind(pos=_rb, size=_rb)
-                extra = ' [size=11sp][color=#FFB347](\u043f\u0440\u0435\u0434\u043f\u043e\u043b\u0430\u0433.)[/color][/size]' if assumed else ''
+                extra = f"  [size=13sp][color=#8FB8FF]в рулон {rub(to_roll)}[/color][/size]" if to_roll > 0.004 else ''
                 line = Label(text=f"[b]{name}[/b]  [size=12sp][color=#7A8494]{date}[/color][/size]   [b][color={col}]{sign}{rub(abs(pr))} \u20bd[/color][/b]" + extra,
                              markup=True, font_size='17sp', color=(1, 1, 1, 1), halign='left', valign='middle')
-                line.bind(size=lambda s, v: setattr(s, 'text_size', v))
+                line.bind(width=lambda s, v: setattr(s, 'text_size', (v, None)))
+                line.bind(texture_size=lambda s, v, r=row: setattr(r, 'height', max(90, v[1] + 20)))
                 row.add_widget(line)
                 grid.add_widget(row)
         pop.content.add_widget(legend)
@@ -2822,7 +2823,7 @@ class ClientsScreen(Screen):
             pop.is_dismissing_flag = True
             snap = snapshot(app)
             _old_taken = (getattr(app, 'profit_taken', '0'), list(getattr(app, 'profit_takes', []) or []))
-            app.profit_correction = str(round(val - tot_debt + banner_deficit, 2))
+            app.profit_correction = str(round(val - tot_debt, 2))
             if abs(val) < 0.005:   # общая обнулена — текущая тоже с нуля
                 app.profit_taken, app.profit_takes = '0', []
             ok, message = commit(app, snap, 'правка прибыли')
@@ -4164,13 +4165,13 @@ class ClientsScreen(Screen):
                 if total_deducted > 0:
                     app.profit_correction = str(round(safe_float(app.profit_correction) - total_deducted, 2))
             try:
-                _op = round(val - safe_float(print_cost), 2)
+                _op = round(val - safe_float(print_cost) - total_deducted, 2)
                 if not hasattr(app, 'profit_log') or app.profit_log is None:
                     app.profit_log = []
                 if not c.get('is_creditor'):
                     app.profit_log.append({'oid': _oid, 'date': hist_item['date'], 'name': c.get('name', ''),
                     'desc': (order_desc or '').strip() or hist_item['desc'],
-                    'profit': _op, 'assumed': bool(total_deducted > 0)})
+                    'profit': _op, 'to_roll': round(total_deducted, 2)})
             except Exception:
                 pass
             app._op = f"заказ: {order_desc or hist_item['desc']}"
@@ -4251,7 +4252,21 @@ class ClientsScreen(Screen):
         if not is_special_banner:
             in_pay = styled_input(hint_text="0", input_type='number', input_filter='float')
             content.add_widget(make_card("СКОЛЬКО ОТДАЛ (ОТНЯТЬ)", (0.4, 0.8, 1, 1), in_pay))
-        content.add_widget(make_card("ДОЛГ / МИНУС", (1.0, 0.843, 0.251, 1), in_d))
+        # Кнопка «±»: на клавиатуре телефона нет минуса — меняет знак суммы (например, −3500)
+        d_row = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=118)
+        d_row.add_widget(in_d)
+        btn_sign = RoundedButton(text="±", bg_color=(0.24, 0.30, 0.42, 1), size_hint_x=None, width=130,
+                                 bold=True, radius=20, font_size='30sp')
+
+        def _flip_sign(*a):
+            t = (in_d.text or '').strip().replace(' ', '')
+            if t.startswith('-'):
+                in_d.text = t[1:] or '0'
+            elif t and safe_float(t) != 0:
+                in_d.text = '-' + t
+        btn_sign.bind(on_release=_flip_sign)
+        d_row.add_widget(btn_sign)
+        content.add_widget(make_card("ДОЛГ / МИНУС", (1.0, 0.843, 0.251, 1), d_row))
 
         if not is_special_banner and not c.get('is_creditor'):
             btn_orders = RoundedButton(text="ИСПРАВИТЬ ЗАКАЗЫ", bg_color=(0.13, 0.38, 0.7, 1),
@@ -4965,8 +4980,9 @@ class BusinessApp(App):
                 banner_deficit += val
             elif i != o_idx:
                 tot_debt += val
-        base_profit = round(tot_debt + safe_float(self.profit_correction), 2)
-        real_profit = round(base_profit - banner_deficit, 2)
+        # Минус рулона (БЕЛЫЙ/ЧЕРНЫЙ) в прибыль не входит: заказы сначала гасят минус,
+        # и только остаток идёт в прибыль (profit_model 2).
+        real_profit = round(tot_debt + safe_float(self.profit_correction), 2)
         if abs(real_profit) < 0.01:
             real_profit = 0.0
         return tot_debt, my_debt, banner_deficit, real_profit
@@ -5117,11 +5133,40 @@ class BusinessApp(App):
         self.migrate_roles()
         self.ensure_default_clients()
         ensure_ids(self.clients)
+        self.migrate_profit_model()
         if getattr(self, 'journal', None) is None:
             self.journal = []
         self._journal_base = journal_balances(self)
         self._migrate_rolls_if_needed()
         self.save_data()
+
+    def migrate_profit_model(self):
+        """Однократно: прибыль считается без минуса рулона. Чтобы цифры на экране не прыгнули,
+        текущий минус рулона переносится в поправку. Старые записи «предполаг.» в истории
+        прибыли переписываются: сколько ушло в рулон и сколько в прибыль (суммы не меняются)."""
+        extra = getattr(self, '_extra_data', None)
+        if extra is None:
+            extra = self._extra_data = {}
+        if extra.get('profit_model') == 2:
+            return
+        _, _, b_idx, c_idx = self.get_special_clients()
+        deficit = sum(safe_float(self.clients[i].get('debt', 0)) for i in (b_idx, c_idx) if i is not None)
+        self.profit_correction = str(round(safe_float(self.profit_correction) - deficit, 2))
+        orders = {}
+        for c in self.clients:
+            for h in c.get('history', []) + c.get('archived_history', []):
+                if h.get('oid'):
+                    orders[h['oid']] = h
+        for p_ in getattr(self, 'profit_log', None) or []:
+            if not p_.get('assumed'):
+                continue
+            h = orders.get(p_.get('oid'))
+            if h is not None:
+                ded = round(safe_float(h.get('banner_deduction')) + safe_float(h.get('banner_deduction2')), 2)
+                p_['profit'] = round(safe_float(p_.get('profit')) - ded, 2)
+                p_['to_roll'] = ded
+            p_.pop('assumed', None)
+        extra['profit_model'] = 2
 
     def _migrate_rolls_if_needed(self):
         # если ключа rolls в файле ещё не было — перенесём текущий остаток

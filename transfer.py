@@ -68,8 +68,10 @@ def summarize(app_class, data):
     tmp = app_class.__new__(app_class)   # без запуска второго приложения Kivy
     tmp.clients = copy.deepcopy(data['clients'])
     tmp.profit_correction = data.get('profit_correction', '0')
-    tmp._extra_data = {k: v for k, v in data.items() if k == 'roles_version'}
+    tmp._extra_data = {k: v for k, v in data.items() if k in ('roles_version', 'profit_model')}
+    tmp.profit_log = copy.deepcopy(data.get('profit_log', []))
     tmp.migrate_roles()
+    tmp.migrate_profit_model()
     return tmp.get_totals()
 
 

@@ -127,7 +127,7 @@ class AccountingTests(unittest.TestCase):
         self.app.profit_correction = money(5000 - main.safe_float(self.sasha['debt']))
         self.assertEqual(self.app.get_totals()[3], 5000)
         self.assertTrue(purchase_banner(self.app, 'white', 10000.01, '3.2', 50)[0])
-        self.assertEqual(self.app.get_totals()[3], -5000.01)
+        self.assertEqual(self.app.get_totals()[3], 5000)   # закупка рулона прибыль не трогает (3.2)
         self.assertEqual(self.app.rolls[-1]['remain'], '50')
         self.assertTrue(purchase_banner(self.app, 'black', 2000)[0])
         before = self.app.get_totals()
