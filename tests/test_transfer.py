@@ -73,7 +73,7 @@ class TransferTests(unittest.TestCase):
         self.assertTrue(os.path.exists(backup))
         self.assertIn('ТЕСТ', Path(backup).read_text(encoding='utf-8'))  # прежняя база сохранена
         self.assertEqual(self.app.get_totals(), expected)
-        self.assertEqual([c['name'] for c in self.app.clients], [c['name'] for c in OLD_BASE['clients']])
+        self.assertEqual([c['name'] for c in self.app.clients], [c['name'] for c in OLD_BASE['clients']] + ['ПЛЁНКА'])
         saved = json.loads(Path(main.DATA_FILE).read_text(encoding='utf-8'))
         self.assertEqual(saved['old_unknown_field'], {'keep': 1})
         self.assertEqual(main.check_integrity(self.app), [])

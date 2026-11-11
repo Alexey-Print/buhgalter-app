@@ -78,7 +78,7 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(roles['ЧЕРНЫЙ БАНЕР'], 'black')
         self.assertTrue(app.clients[2]['is_creditor'])  # «Малевич» — исполнитель, как раньше
         self.assertEqual(app.role_warning, [])
-        self.assertEqual(len(app.clients), len(base))  # лишних карточек нет
+        self.assertEqual(len(app.clients), len(base) + 1)  # лишних нет, только «ПЛЁНКА» (3.6)
 
     def test_special_words_in_ordinary_names(self):
         app = self.load(self.legacy_base())
@@ -125,12 +125,12 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(sorted(app.role_warning), ['Белый дом', 'Белый рулон'])
         self.assertFalse(any(c.get('role') == 'white' for c in app.clients))
         self.assertEqual(app.get_totals(), expected)
-        self.assertEqual(len(app.clients), len(base))
+        self.assertEqual(len(app.clients), len(base) + 1)  # + «ПЛЁНКА» (3.6)
 
     def test_fresh_install_creates_cards_with_roles(self):
         app = self.load()
         roles = sorted(c.get('role') for c in app.clients if c.get('role'))
-        self.assertEqual(roles, ['black', 'remainder', 'white'])
+        self.assertEqual(roles, ['black', 'plenka', 'remainder', 'white'])
         self.assertEqual(sum(1 for c in app.clients if c.get('is_creditor')), 1)
 
 

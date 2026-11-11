@@ -68,7 +68,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.5"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.6"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -921,7 +921,7 @@ class MainMenu(Screen):
         if not app:
             return
         m_indices, o_idx, b_idx, c_idx = app.get_special_clients()
-        special = set(i for i in (o_idx, b_idx, c_idx) if i is not None)
+        special = set(i for i in (o_idx, b_idx, c_idx, app.plenka_index()) if i is not None)
         if kind == 'creditors':
             title = "МОЙ ДОЛГ — КОМУ Я ДОЛЖЕН"
             accent = (1.0, 0.322, 0.322, 1)
@@ -1335,10 +1335,10 @@ class ClientsScreen(Screen):
         app.ensure_default_clients()
         self.list_layout.clear_widgets()
         m_indices, o_idx, b_idx, c_idx = app.get_special_clients()
-        special_indices = [i for i in (o_idx, c_idx, b_idx) if i is not None] + m_indices
+        special_indices = [i for i in (o_idx, c_idx, b_idx, app.plenka_index()) if i is not None] + m_indices
         other_indices = [i for i in range(len(app.clients)) if i not in special_indices]
 
-        # 1. Панель материалов (ОСТАТОК / ЧЕРНЫЙ / БЕЛЫЙ)
+        # 1. Панель материалов (ОСТАТОК / ЧЕРНЫЙ / БЕЛЫЙ / ПЛЁНКА)
         self.list_layout.add_widget(self._build_banner_panel(o_idx, c_idx, b_idx))
 
         # 2. Секция «КЛИЕНТЫ»
@@ -1530,7 +1530,7 @@ class ClientsScreen(Screen):
         panel.bind(minimum_height=panel.setter('height'))
         panel.bind(pos=lambda *a: self._draw_panel_bg(panel),
                    size=lambda *a: self._draw_panel_bg(panel))
-        for idx, kind in ((o_idx, 'ost'), (c_idx, 'black'), (b_idx, 'white')):
+        for idx, kind in ((o_idx, 'ost'), (c_idx, 'black'), (b_idx, 'white'), (app.plenka_index(), 'plenka')):
             if idx is None:
                 continue
             client = app.clients[idx]
@@ -1557,14 +1557,14 @@ class ClientsScreen(Screen):
                     text = f"[b][color=#FFFFFF]ОСТАТКИ[/color][/b]  [size=15sp][color=#9A9A9A]рул.: {cnt}[/color][/size]    [b][color=#FFB84D]{_rem} м[/color][/b]"
                 row = self._banner_row(text, (lambda x: self.show_rolls_inventory()), None, big=True)
             else:
-                disp = "БЕЛЫЙ" if kind == 'white' else "ЧЕРНЫЙ"
+                disp = {"white": "БЕЛЫЙ", "black": "ЧЕРНЫЙ", "plenka": "ПЛЁНКА"}[kind]
                 dnum = abs(safe_float(client.get('debt', '0')))
                 dval = rub(dnum)
                 if dnum > 0:
                     text = f"[b][color=#FFFFFF]{disp}[/color][/b]  [color=#9A9A9A]МИНУС:[/color] [b][color=#FF8A80]{dval} р[/color][/b]"
                 else:
                     text = f"[b][color=#FFFFFF]{disp}[/color][/b]  [b][color=#5FD39B]ОСТАТОК: 0 р[/color][/b]"
-                neon = (0.66, 0.3, 1.0) if kind == 'white' else (0.30, 0.55, 1.0)
+                neon = {"white": (0.66, 0.3, 1.0), "black": (0.30, 0.55, 1.0), "plenka": (0.25, 0.8, 0.5)}[kind]
                 row = self._banner_row(text, (lambda x, i=idx: self.show_edit_popup(i)), neon)
             panel.add_widget(row)
         return panel
@@ -2702,7 +2702,7 @@ class ClientsScreen(Screen):
             return
         tot_debt, my_debt, _, _ = app.get_totals()
         m_indices, o_idx, b_idx, c_idx = app.get_special_clients()
-        special_indices = [i for i in (o_idx, c_idx, b_idx) if i is not None] + m_indices
+        special_indices = [i for i in (o_idx, c_idx, b_idx, app.plenka_index()) if i is not None] + m_indices
         lines = [f"{c.get('name', '').upper().strip()}: {rub(safe_float(c.get('debt', 0)))} руб"
                  for i, c in enumerate(app.clients) if i not in special_indices]
         lines.append(f"КЛИЕНТЫ ДОЛЖНЫ: {rub(tot_debt)} руб")
@@ -2916,12 +2916,14 @@ class ClientsScreen(Screen):
 
     def show_zakupka_menu(self, instance):
         content = BoxLayout(orientation='vertical', spacing=20, padding=20)
-        pop = AppPopup(title="ЗАКУПКА БАНЕРОВ", content=content, size_hint=(0.9, 0.65))
+        pop = AppPopup(title="ЗАКУПКА", content=content, size_hint=(0.9, 0.75))
         b_w = RoundedButton(text="БЕЛЫЙ БАНЕР", bg_color=(0.95, 0.95, 0.95, 1), color=(0,0,0,1), height=130, size_hint_y=None, font_size='24sp', bold=True)
         b_w.bind(on_release=lambda x: self.safe_transition(pop, self.show_zakupka_input_popup, "white", prev_cb=lambda p=None: self.show_zakupka_menu(instance)))
         b_b = RoundedButton(text="ЧЕРНЫЙ БАНЕР", bg_color=(0.1, 0.1, 0.1, 1), height=130, size_hint_y=None, font_size='24sp', bold=True)
         b_b.bind(on_release=lambda x: self.safe_transition(pop, self.show_zakupka_input_popup, "black", prev_cb=lambda p=None: self.show_zakupka_menu(instance)))
-        content.add_widget(b_w); content.add_widget(b_b); content.add_widget(Widget())
+        b_p = RoundedButton(text="ПЛЁНКА", bg_color=(0.12, 0.45, 0.3, 1), height=130, size_hint_y=None, font_size='24sp', bold=True)
+        b_p.bind(on_release=lambda x: self.safe_transition(pop, self.show_zakupka_input_popup, "plenka", prev_cb=lambda p=None: self.show_zakupka_menu(instance)))
+        content.add_widget(b_w); content.add_widget(b_b); content.add_widget(b_p); content.add_widget(Widget())
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
@@ -2929,7 +2931,7 @@ class ClientsScreen(Screen):
         scroll = ScrollView()
         content = BoxLayout(orientation='vertical', spacing=18, padding=20, size_hint_y=None)
         content.bind(minimum_height=content.setter('height'))
-        pop = TopMenuPopup(title=f"ЗАКУПКА: {'БЕЛЫЙ' if mode == 'white' else 'ЧЕРНЫЙ'}", content=scroll, size_hint=(0.9, 0.72))
+        pop = TopMenuPopup(title=f"ЗАКУПКА: {({'white': 'БЕЛЫЙ', 'black': 'ЧЕРНЫЙ'}).get(mode, 'ПЛЁНКА')}", content=scroll, size_hint=(0.9, 0.72))
         in_sum = TextInput(background_normal='', background_active='', background_color=(0.17, 0.20, 0.27, 1), foreground_color=(1, 1, 1, 1), hint_text_color=(0.55, 0.6, 0.68, 1), cursor_color=(0.2, 0.75, 0.84, 1), hint_text="Введите сумму...", input_type='number', input_filter='float', multiline=False, font_size='28sp', halign='center', size_hint_y=None, height=110)
         # ширина и длина рулона (для остатков материала)
         roll_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=100)
@@ -2957,8 +2959,9 @@ class ClientsScreen(Screen):
 
         btn_save.bind(on_release=save_zakupka)
         content.add_widget(in_sum)
-        content.add_widget(lbl_roll)
-        content.add_widget(roll_row)
+        if mode != 'plenka':             # для плёнки метры рулона не ведутся
+            content.add_widget(lbl_roll)
+            content.add_widget(roll_row)
         content.add_widget(btn_save)
         content.add_widget(self.get_bottom_buttons(pop, prev_cb, cancel_text="ЗАКРЫТЬ"))
         content.add_widget(Widget(size_hint_y=None, height=350))
@@ -3187,7 +3190,7 @@ class ClientsScreen(Screen):
         list_layout.bind(minimum_height=list_layout.setter('height'))
         pop = TopMenuPopup(title="ВЫБЕРИТЕ КЛИЕНТА", content=scroll, size_hint=(0.95, 0.8))
         m_indices, o_idx, b_idx, c_idx = app.get_special_clients()
-        special = m_indices + [i for i in (b_idx, c_idx, o_idx) if i is not None]
+        special = m_indices + [i for i in (b_idx, c_idx, o_idx, app.plenka_index()) if i is not None]
         ordered = [i for i in range(len(app.clients)) if i not in special]
         for i in ordered:
             btn = RoundedButton(text=app.clients[i].get('name', '').upper(), bg_color=(0.15, 0.6, 0.3, 1), height=100, size_hint_y=None, font_size='22sp', bold=True)
@@ -4139,6 +4142,18 @@ class ClientsScreen(Screen):
                         hist_item['banner_deduction2_id'] = app.clients[secondary_idx]['cid']
                 if total_deducted > 0:
                     app.profit_correction = str(round(safe_float(app.profit_correction) - total_deducted, 2))
+            # Своя печать плёнки гасит минус «ПЛЁНКА» (закупленная плёнка окупается, потом прибыль)
+            p_idx = app.plenka_index()
+            if ('plenka' in mode and not via_malevich and not c.get('is_creditor')
+                    and p_idx is not None and val > 0):
+                pdebt = safe_float(app.clients[p_idx].get('debt', 0))
+                if pdebt > 0:
+                    d1 = min(pdebt, val)
+                    app.clients[p_idx]['debt'] = format_num_simple(max(0.0, pdebt - d1))
+                    total_deducted = d1
+                    hist_item['banner_deduction'] = d1
+                    hist_item['banner_deduction_id'] = app.clients[p_idx]['cid']
+                    app.profit_correction = str(round(safe_float(app.profit_correction) - d1, 2))
             try:
                 _op = round(val - safe_float(print_cost) - total_deducted, 2)
                 if not hasattr(app, 'profit_log') or app.profit_log is None:
@@ -4166,7 +4181,7 @@ class ClientsScreen(Screen):
             return
         c = app.clients[idx]
         m_indices, o_idx, b_idx, c_idx = app.get_special_clients()
-        is_special_banner = idx in (b_idx, c_idx)
+        is_special_banner = idx in (b_idx, c_idx) or idx == app.plenka_index()
 
         scroll = ScrollView()
         content = BoxLayout(orientation='vertical', spacing=18, padding=[16, 10, 16, 10], size_hint_y=None)
@@ -4925,6 +4940,16 @@ class BusinessApp(App):
             found[role] = idx
         return m_indices, found['remainder'], found['white'], found['black']
 
+    def plenka_index(self):
+        """Карточка «ПЛЁНКА» (role='plenka'): минус за закупленную плёнку, гасится своей печатью плёнки."""
+        return next((i for i, c in enumerate(self.clients)
+                     if c.get('role') == 'plenka' and not c.get('is_creditor')), None)
+
+    def special_set(self):
+        """Все служебные карточки (не клиенты): исполнители, остаток, банер, плёнка."""
+        m_indices, o_idx, b_idx, c_idx = self.get_special_clients()
+        return set(m_indices) | {i for i in (o_idx, b_idx, c_idx, self.plenka_index()) if i is not None}
+
     def ensure_default_clients(self):
         m_indices, o_idx, b_idx, c_idx = self.get_special_clients()
         if o_idx is None:
@@ -4943,15 +4968,18 @@ class BusinessApp(App):
             self.clients.append({'name': 'БЕЛЫЙ БАНЕР', 'debt': '0', 'role': 'white'})
         if c_idx is None:
             self.clients.append({'name': 'ЧЕРНЫЙ БАНЕР', 'debt': '0', 'role': 'black'})
+        if self.plenka_index() is None:
+            self.clients.append({'name': 'ПЛЁНКА', 'debt': '0', 'role': 'plenka'})
 
     def get_totals(self):
         m_indices, o_idx, b_idx, c_idx = self.get_special_clients()
+        p_idx = self.plenka_index()
         tot_debt = my_debt = banner_deficit = 0.0
         for i, client in enumerate(self.clients):
             val = safe_float(client.get('debt', 0))
             if i in m_indices:
                 my_debt += val
-            elif i in (b_idx, c_idx):
+            elif i in (b_idx, c_idx, p_idx):
                 banner_deficit += val
             elif i != o_idx:
                 tot_debt += val

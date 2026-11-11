@@ -65,6 +65,27 @@ class RollPaybackTests(unittest.TestCase):
         self.order(1000)                      # +1000 прибыль -> 1100 / 900
         self.assertEqual(self.app.profit_percent(), 122)
 
+    def plenka(self):
+        return self.app.clients[self.app.plenka_index()]
+
+    def test_plenka_purchase_paid_by_own_print(self):
+        self.assertTrue(purchase_banner(self.app, 'plenka', 2000, '1.5', 50)[0])
+        self.assertEqual(self.plenka()['debt'], '2 000')
+        self.assertEqual(self.profit(), 0)
+        self.assertNotIn(self.plenka(), [])            # карточка есть
+        n_rolls = len(self.app.rolls)
+        first = self.order(1500, mode='plenka_gloss')
+        self.assertEqual(self.profit(), 0)
+        self.assertEqual(self.plenka()['debt'], '500')
+        self.order(1000, mode='plenka_matte')
+        self.assertEqual(self.profit(), 500)
+        self.assertEqual(self.app.profit_log[-1]['to_roll'], 500)
+        self.assertEqual(len(self.app.rolls), n_rolls)  # метры банера плёнка не трогает
+        self.assertEqual(self.app.get_totals()[0], 2500)  # «ПЛЁНКА» не считается долгом клиента
+        self.assertTrue(reverse_order(self.app, self.sasha, first)[0])
+        self.assertEqual(self.plenka()['debt'], '1 500')
+        self.assertEqual(main.check_integrity(self.app), [])
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()

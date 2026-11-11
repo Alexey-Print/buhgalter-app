@@ -194,9 +194,8 @@ def _dec(value):
 
 def is_ordinary_client(app, client):
     """Обычный клиент: не исполнитель, не баннерный материал и не остаток баннера."""
-    creditors, remainder, white, black = app.get_special_clients()
     idx = next((i for i, c in enumerate(app.clients) if c is client), None)
-    return idx is not None and idx not in creditors and idx not in (remainder, white, black)
+    return idx is not None and idx not in app.special_set()
 
 
 def payment_result(old_value, paid):
@@ -251,10 +250,10 @@ def creditor_is_referenced(app, creditor):
 def purchase_banner(app, color, amount, width='', length=0):
     amount = number(amount)
     length = number(length)
-    if amount <= 0 or color not in ('white', 'black') or length < 0:
+    if amount <= 0 or color not in ('white', 'black', 'plenka') or length < 0:
         return False, 'Введите положительную сумму закупки'
     _, _, white, black = app.get_special_clients()
-    index = white if color == 'white' else black
+    index = {'white': white, 'black': black, 'plenka': app.plenka_index()}[color]
     if index is None:
         return False, 'Материал не найден'
     state = snapshot(app)
@@ -266,9 +265,9 @@ def purchase_banner(app, color, amount, width='', length=0):
         client['zakupka_total'] = money(total + amount)
         from datetime import datetime
         client.setdefault('purchase_log', []).append({'date': datetime.now().strftime('%d.%m.%y %H:%M'), 'sum': money(amount)})
-        if length > 0:
+        if length > 0 and color != 'plenka':
             app.rolls.append({'color': color, 'width': str(width).strip() or '0', 'total': money(length), 'remain': money(length)})
-        app._op = 'закупка банера'
+        app._op = 'закупка плёнки' if color == 'plenka' else 'закупка банера'
         if app.save_data() is not True:
             raise OSError('Сохранение не подтверждено')
     except Exception as exc:
@@ -295,10 +294,11 @@ def clear_history(app, client):
 
 def period_totals(app, in_period):
     creditors, remainder, white, black = app.get_special_clients()
-    excluded = set(creditors + [remainder, white, black])
+    plenka = app.plenka_index()
+    excluded = set(creditors + [remainder, white, black, plenka])
     revenue = printing = purchases = 0.0
     for i, client in enumerate(app.clients):
-        if i in (white, black):
+        if i is not None and i in (white, black, plenka):
             purchases += sum(number(h.get('sum')) for h in client.get('purchase_log', []) if in_period(h.get('date')))
         if i in excluded:
             continue
