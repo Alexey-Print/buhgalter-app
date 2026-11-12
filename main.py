@@ -45,6 +45,7 @@ from kivy.clock import Clock
 from kivy.animation import Animation
 from kivy.properties import ListProperty, NumericProperty
 from kivy.metrics import sp as _sp
+from kivy.uix.anchorlayout import AnchorLayout
 
 try:
     Window.softinput_mode = 'below_target'
@@ -1790,33 +1791,54 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         if not app:
             return
-        content = BoxLayout(orientation='vertical', spacing=10, padding=[14, 10, 14, 14])
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
         pop = TopMenuPopup(title="ИСТОРИЯ ТЕКУЩЕЙ", content=content, size_hint=(0.96, 0.92))
+        pop.background_color = GR_BG
+        content.add_widget(self._gr_auto_label(
+            "Здесь записано, когда вы обнуляли текущую прибыль или вычитали из неё.\n"
+            "Общая прибыль от этого не меняется. «ВЕРНУТЬ» — отменить запись.",
+            font='13sp', color=(0.62, 0.67, 0.74, 1)))
         scroll = ScrollView()
-        grid = GridLayout(cols=1, spacing=8, size_hint_y=None, padding=[2, 4, 2, 8])
+        grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
         grid.bind(minimum_height=grid.setter('height'))
         scroll.add_widget(grid)
         content.add_widget(scroll)
+
+        def describe(e):
+            amt = safe_float(e.get('amount'))
+            kind = e.get('kind', '')
+            has = 'before' in e and 'after' in e
+            tail = (f"\n[color=#7F8A99]было {rub(e['before'])} р, стало {rub(e['after'])} р[/color]" if has else '')
+            if kind == 'обнулено':
+                head = f"[b]Обнулили текущую[/b]  [color=#5FD3FF]было {rub(amt)} р, стало 0[/color]"
+                tail = ''
+            elif kind == 'вычтено':
+                head = f"[b]Вычли[/b]  [color=#FFB74D]−{rub(amt)} р[/color]"
+            else:
+                word = 'меньше' if amt >= 0 else 'больше'
+                head = f"[b]Исправили[/b]  [color=#FFB74D]текущая {word} на {rub(abs(amt))} р[/color]"
+            note = f"\n[color=#FFFFFF]{escape_markup(e['note'])}[/color]" if e.get('note') else ''
+            return f"[color=#AAB4C8]{e.get('date', '')}[/color]\n{head}{tail}{note}"
 
         def fill():
             grid.clear_widgets()
             takes = list(getattr(app, 'profit_takes', []) or [])
             if not takes:
-                grid.add_widget(Label(text="[color=#7A8494]Пока ничего не вычитали[/color]", markup=True,
-                                      font_size='16sp', size_hint_y=None, height=90))
+                grid.add_widget(self._gr_auto_label("[color=#7A8494]Пока ничего не обнуляли и не вычитали[/color]",
+                                                    font='15sp'))
                 return
             for e in reversed(takes):
-                amt = safe_float(e.get('amount'))
-                sign = '−' if amt >= 0 else '+'
-                note = f"\n[color=#FFFFFF]{escape_markup(e['note'])}[/color]" if e.get('note') else ''
-                txt = (f"[color=#AAB4C8]{e.get('date', '')}  {e.get('kind', '')}[/color]   "
-                       f"[b][color=#5FD3FF]{sign}{rub(abs(amt))} р[/color][/b]{note}")
-                row = BoxLayout(orientation='horizontal', spacing=8, size_hint_y=None, height=70)
-                lbl = TapTextRow(text=txt, font_size='14sp')
-                lbl.bind(height=lambda w, h, r=row: setattr(r, 'height', h))
-                x = RoundedButton(text="X", bg_color=(0.8, 0.2, 0.2, 1), size_hint_x=None, width=60, radius=12)
+                lbl = self._gr_auto_label(describe(e), font='15sp', color=GR_TEXT, halign='left')
+                x = RoundedButton(text="ВЕРНУТЬ", bg_color=GR_PANEL, border_color=GR_BORDER, size_hint=(None, None),
+                                  width=_sp(84), height=_sp(40), radius=GR_RADIUS, font_size='13sp', bold=True)
                 x.bind(on_release=lambda b, ent=e: undo(ent))
-                row.add_widget(lbl); row.add_widget(x)
+                row = BoxLayout(orientation='horizontal', spacing=_sp(8), size_hint_y=None)
+                box = self._gr_panel([lbl], pad=8)
+                row.add_widget(box)
+                xw = AnchorLayout(size_hint_x=None, width=_sp(84), anchor_y='center')
+                xw.add_widget(x)
+                row.add_widget(xw)
+                box.bind(height=lambda w, h, r=row: setattr(r, 'height', max(h, _sp(44))))
                 grid.add_widget(row)
 
         def undo(ent):
@@ -5097,7 +5119,8 @@ class BusinessApp(App):
         try:
             self.profit_taken = format_num_simple(round(safe_float(old_taken) + delta, 2)).replace(' ', '')
             entry = {'id': uuid.uuid4().hex[:10], 'date': datetime.now().strftime('%d.%m.%y %H:%M'),
-                     'amount': format_num_simple(delta).replace(' ', ''), 'kind': kind}
+                     'amount': format_num_simple(delta).replace(' ', ''), 'kind': kind,
+                     'before': round(cur, 2), 'after': round(cur - delta, 2)}
             if (note or '').strip():
                 entry['note'] = note.strip()[:200]
             self.profit_takes = (old_takes + [entry])[-300:]
