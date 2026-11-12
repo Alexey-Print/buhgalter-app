@@ -68,7 +68,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.8"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "3.9"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1667,10 +1667,12 @@ class ClientsScreen(Screen):
         # текущая прибыль: уменьшается, когда «ОТДАЛ»; общая остаётся
         cur = app.current_profit()
         r3 = BoxLayout(size_hint_y=None, height=118, spacing=6)
+        _since = app.current_since()
+        _cur_title = f"ТЕКУЩАЯ с {_since[:5]}" if _since else "ТЕКУЩАЯ"
         if cur >= 0:
-            ctxt = f"[b][color=#FFFFFF]ТЕКУЩАЯ: [/color][color=#5FD3FF]{rub(cur)} р[/color][/b]"
+            ctxt = f"[b][color=#FFFFFF]{_cur_title}: [/color][color=#5FD3FF]{rub(cur)} р[/color][/b]"
         else:
-            ctxt = f"[b][color=#FF6B6B]ТЕКУЩАЯ: -{rub(abs(cur))} р[/color][/b]"
+            ctxt = f"[b][color=#FF6B6B]{_cur_title}: -{rub(abs(cur))} р[/color][/b]"
         cl = Label(text=ctxt, markup=True, font_size='23sp', halign='center', valign='middle')
         cl.bind(size=lambda s, v: setattr(s, 'text_size', v))
         self._fit_font(cl, max_sp=38, min_sp=12)
@@ -1740,10 +1742,16 @@ class ClientsScreen(Screen):
         info = self._gr_auto_label("", font='20sp', color=GR_TEXT)
         content.add_widget(self._gr_panel([info]))
 
+        since_lbl = self._gr_auto_label("", font='13sp', color=(0.62, 0.67, 0.74, 1))
+
         def show_info():
             info.text = (f"[color=#AAB4C8]общая:[/color] [b]{rub(app.get_totals()[3])} р[/b]\n"
                          f"[color=#AAB4C8]текущая:[/color] [b][color=#5FD3FF]{rub(app.current_profit())} р[/color][/b]")
+            since = app.current_since()
+            since_lbl.text = (f"текущая — прибыль с {since} (последнее обнуление),\nза вычетом того, что вычли после"
+                              if since else "текущая = общая минус то, что вы вычли")
         show_info()
+        content.add_widget(since_lbl)
         content.add_widget(self._gr_auto_label("[b]СУММА, руб[/b]", font='14sp'))
         in_amt = self._gr_input(font='24sp', hint='0')
         content.add_widget(in_amt)
@@ -3100,6 +3108,17 @@ class ClientsScreen(Screen):
                 'total': format_num_simple(in_tot.text or '0'),
                 'remain': format_num_simple(rem_val)
             }
+            # История списаний: когда и сколько метров ушло (или исправлен остаток)
+            log = list(roll.get('log', []) or [])
+            old_rem = safe_float(roll.get('remain', 0)) if not is_new else None
+            now = datetime.now().strftime('%d.%m.%y %H:%M')
+            if is_new:
+                log.append({'date': now, 'kind': 'новый', 'm': round(rem_val, 2), 'left': round(rem_val, 2)})
+            elif abs(rem_val - old_rem) > 0.004:
+                diff = round(old_rem - rem_val, 2)
+                log.append({'date': now, 'kind': 'списано' if diff > 0 else 'добавлено',
+                            'm': abs(diff), 'left': round(rem_val, 2)})
+            data['log'] = log[-100:]
             snap = snapshot(app)
             if is_new:
                 app.rolls.append(data)
@@ -3120,6 +3139,19 @@ class ClientsScreen(Screen):
 
         btn_save = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1), bold=True, radius=22, font_size='21sp', size_hint_y=None, height=104)
         btn_save.bind(on_release=do_save)
+        _log = list(roll.get('log', []) or [])
+        if not is_new:
+            if _log:
+                _lines = []
+                for e in reversed(_log[-6:]):
+                    sign = {'списано': '−', 'добавлено': '+'}.get(e.get('kind'), '')
+                    col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0'}.get(e.get('kind'), '#AAB4C8')
+                    _lines.append(f"{e.get('date', '')}  [color={col}]{e.get('kind', '')} {sign}{format_num_simple(e.get('m', 0))} м[/color]"
+                                  f"  [color=#7F8A99]ост. {format_num_simple(e.get('left', 0))}[/color]")
+                _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n" + "\n".join(_lines)
+            else:
+                _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n[color=#7F8A99]пока пусто — появится после первого списания[/color]"
+            content.add_widget(self._gr_auto_label(_txt, font='13sp', color=GR_TEXT, halign='left'))
         for f in (in_w, in_use, in_tot, in_rem):   # клавиша ↵ на клавиатуре = СОХРАНИТЬ
             f.bind(on_text_validate=do_save)
         content.add_widget(btn_save)
@@ -3765,7 +3797,7 @@ class ClientsScreen(Screen):
         btn_add = RoundedButton(text="ДОБАВИТЬ", bg_color=(0.1, 0.4, 0.8, 1), bold=True, size_hint_x=0.5, font_size='18sp')
         btn_box.add_widget(btn_s); btn_box.add_widget(btn_add)
         hint_add_material = Label(text="* Зажмите [b]ДОБАВИТЬ[/b] подольше, чтобы сменить материал/цену", markup=True, color=(0.7,0.7,0.7,1), font_size='13sp', halign='center', size_hint_y=None, height=45)
-        btn_dop = RoundedButton(text="+ ДОПОБРАБОТКА\n(проклейка / люверсы)", markup=True, bg_color=(0.55, 0.35, 0.7, 1), bold=True, size_hint_y=None, height=110, font_size='17sp')
+        btn_dop = RoundedButton(text="+ ДОПОБРАБОТКА", markup=True, bg_color=(0.55, 0.35, 0.7, 1), bold=True, size_hint_y=None, height=110, font_size='17sp')
         self.order_total_accumulator, self.raw_history_lines, self.history_counter = 0.0, [], 0
         last_add_click_ts = [0.0]
         total_box = BoxLayout(orientation='horizontal', spacing=10, size_hint_y=None, height=140)
@@ -3949,13 +3981,13 @@ class ClientsScreen(Screen):
             history_layout.add_widget(row_card)
 
         def on_dop_clicked(instance):
-            dop_pop = TopMenuPopup(title="ДОПОБРАБОТКА", content=BoxLayout(orientation='vertical', spacing=15, padding=20), size_hint=(0.9, 0.62))
-            lbl_info = Label(text="[color=#CCCCCC]Проклейка, люверсы и др.\nСумма идёт клиенту в долг\nи полностью в чистую прибыль[/color]",
-                             markup=True, font_size='16sp', halign='center', valign='middle', size_hint_y=None, height=90)
-            lbl_info.bind(size=lambda s, v: setattr(s, 'text_size', v))
-            in_dop = TextInput(background_normal='', background_active='', background_color=(0.17, 0.20, 0.27, 1), foreground_color=(1, 1, 1, 1), hint_text_color=(0.55, 0.6, 0.68, 1), cursor_color=(0.2, 0.75, 0.84, 1), hint_text="Сумма за допобработку...", input_type='number', input_filter='float',
-                               multiline=False, font_size='30sp', halign='center', size_hint_y=None, height=100)
-            dop_pop.content.add_widget(lbl_info)
+            dop_pop = TopMenuPopup(title="ДОПОБРАБОТКА", content=BoxLayout(orientation='vertical', spacing=_sp(8),
+                                   padding=[_sp(10), _sp(6), _sp(10), _sp(8)]), size_hint=(0.94, 0.7))
+            dop_pop.background_color = GR_BG
+            in_dop = self._gr_input(font='26sp', hint='0')
+            dop_pop.content.add_widget(self._gr_auto_label(
+                "Сумма идёт клиенту в долг\nи полностью в прибыль", font='15sp', color=GR_SUB))
+            dop_pop.content.add_widget(self._gr_auto_label("[b]СУММА, руб[/b]", font='14sp'))
             dop_pop.content.add_widget(in_dop)
 
             def save_dop(x):
@@ -3984,9 +4016,12 @@ class ClientsScreen(Screen):
                                f"[b]Допобработка[/b]  [color=#00FF00]= {format_num_simple(val)}[/color]", "ДОП")
                 dop_pop.dismiss()
 
-            btn_save_dop = RoundedButton(text="ДОБАВИТЬ В ЗАКАЗ", bg_color=(0.2, 0.6, 0.4, 1), height=90, size_hint_y=None, bold=True)
+            btn_save_dop = RoundedButton(text="ДОБАВИТЬ В ЗАКАЗ", bg_color=GR_ACCENT, height=_sp(50), size_hint_y=None,
+                                         bold=True, font_size='17sp', radius=GR_RADIUS)
             btn_save_dop.bind(on_release=save_dop)
+            in_dop.bind(on_text_validate=save_dop)
             dop_pop.content.add_widget(btn_save_dop)
+            dop_pop.content.add_widget(Widget())
             dop_pop.content.add_widget(self.get_bottom_buttons(dop_pop, cancel_text="ОТМЕНА"))
             dop_pop.open()
 
@@ -5032,6 +5067,13 @@ class BusinessApp(App):
     def current_profit(self):
         """Текущая прибыль = общая минус всё, что отдано («ОТДАЛ»). Общая не меняется."""
         return round(self.get_totals()[3] - safe_float(getattr(self, 'profit_taken', '0')), 2)
+
+    def current_since(self):
+        """Дата последнего обнуления текущей ('11.11.26 16:16') или None — тогда текущая = общая."""
+        for t in reversed(list(getattr(self, 'profit_takes', []) or [])):
+            if t.get('kind') == 'обнулено':
+                return t.get('date')
+        return None
 
     def take_profit(self, amount=None, reset=False, set_to=None, note=''):
         """Текущая прибыль: «ВЫЧЕСТЬ» сумму, «СДЕЛАТЬ =» точное значение или «ОБНУЛИТЬ».

@@ -102,6 +102,37 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(oleg['debt'], '2 000')
         self.assertEqual(main.check_integrity(self.app), [])
 
+    def test_current_since(self):
+        self.assertIsNone(self.app.current_since())
+        self.order(1000)
+        self.assertTrue(self.app.take_profit(reset=True)[0])
+        self.assertTrue(self.app.current_since())
+
+    def test_roll_writeoff_log(self):
+        made = []
+        orig = main.RoundedButton.__init__
+
+        def rec(btn, **kw):
+            orig(btn, **kw); made.append(btn)
+        main.RoundedButton.__init__ = rec
+        try:
+            self.app.rolls = [{'color': 'black', 'width': '3.2', 'total': '50', 'remain': '30'}]
+            self.screen._roll_edit_popup(0, None)
+            from kivy.uix.textinput import TextInput
+            save_btns = [b for b in made if b.text == 'СОХРАНИТЬ']
+            self.assertTrue(save_btns)
+            # находим поле «расход» в том же окне
+            root = save_btns[-1].parent
+            fields = [w for w in root.walk() if isinstance(w, TextInput) and w.hint_text.startswith('расход')]
+            fields[0].text = '8'
+            save_btns[-1].dispatch('on_release')
+        finally:
+            main.RoundedButton.__init__ = orig
+        roll = self.app.rolls[0]
+        self.assertEqual(roll['remain'], '22')
+        self.assertEqual(roll['log'][-1]['kind'], 'списано')
+        self.assertEqual(roll['log'][-1]['m'], 8)
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()
