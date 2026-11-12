@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "3.9"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.0"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1787,6 +1787,53 @@ class ClientsScreen(Screen):
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
+    def show_debt_moves(self, client):
+        """Движение долга карточки из журнала: заказы, оплаты («отдал»), ручные правки, взаимозачёт."""
+        app = App.get_running_app()
+        if not app:
+            return
+        cid = client.get('cid')
+        moves = [e for e in (getattr(app, 'journal', None) or []) if cid and e.get('cid') == cid
+                 and abs(safe_float(e.get('now')) - safe_float(e.get('was'))) > 0.004]
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        pop = TopMenuPopup(title=f"ДВИЖЕНИЕ: {client.get('name', '').upper()}", content=content, size_hint=(0.96, 0.92))
+        pop.background_color = GR_BG
+        content.add_widget(self._gr_auto_label(
+            "Каждое изменение долга: заказы, оплаты, ручные правки. Сверху — последние.",
+            font='13sp', color=(0.62, 0.67, 0.74, 1)))
+        scroll = ScrollView()
+        grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
+        grid.bind(minimum_height=grid.setter('height'))
+        scroll.add_widget(grid)
+        content.add_widget(scroll)
+
+        def title_of(op):
+            op = op or ''
+            if op == 'оплата':
+                return 'Оплата / отдал' if client.get('is_creditor') else 'Оплата'
+            if op == 'правка долга':
+                return 'Исправлено вручную'
+            if op.startswith('заказ: '):
+                return 'Заказ: ' + op[7:]
+            if op == 'изменение':
+                return 'Изменение'
+            return op[:1].upper() + op[1:]
+
+        if not moves:
+            grid.add_widget(self._gr_auto_label("[color=#7A8494]Пока нет записей[/color]", font='15sp'))
+        for e in reversed(moves[-200:]):
+            was, now = safe_float(e.get('was')), safe_float(e.get('now'))
+            diff = round(now - was, 2)
+            col = '#FF8A80' if diff > 0 else '#8FE6B0'
+            t = str(e.get('t', ''))
+            date = f"{t[8:10]}.{t[5:7]}.{t[2:4]} {t[11:16]}" if len(t) >= 16 else t
+            txt = (f"[color=#AAB4C8]{date}[/color]   [b][color={col}]{'+' if diff > 0 else '−'}{rub(abs(diff))} р[/color][/b]\n"
+                   f"[b]{escape_markup(title_of(e.get('op')))}[/b]\n"
+                   f"[color=#7F8A99]было {rub(was)} р, стало {rub(now)} р[/color]")
+            grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8))
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
+
     def show_current_profit_history(self, *args):
         app = App.get_running_app()
         if not app:
@@ -2315,8 +2362,15 @@ class ClientsScreen(Screen):
             add_wrap.add_widget(Widget(size_hint_x=0.0625))
             popup_content.add_widget(add_wrap)
 
-        actions_row = BoxLayout(orientation='horizontal', size_hint_x=0.875, spacing=12)
+        btn_moves = RoundedButton(text="ОПЛАТЫ\nПРАВКИ", bg_color=(0.12, 0.45, 0.42, 1),
+                                  size_hint=(1, 1), font_size='14sp', bold=True, radius=22)
+        btn_moves.bind(on_release=lambda x: self.show_debt_moves(client))
+        btn_all_orders.font_size = '14sp'
+        btn_all_orders.text = "ВСЕ\nЗАКАЗЫ"
+        btn_clear_hist.font_size = '12sp'
+        actions_row = BoxLayout(orientation='horizontal', size_hint_x=0.875, spacing=10)
         actions_row.add_widget(btn_all_orders)
+        actions_row.add_widget(btn_moves)
         actions_row.add_widget(btn_clear_hist)
         actions_wrap = BoxLayout(orientation='horizontal', size_hint_y=None, height=133)
         actions_wrap.add_widget(Widget(size_hint_x=0.0625))
