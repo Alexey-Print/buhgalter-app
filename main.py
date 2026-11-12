@@ -1796,7 +1796,7 @@ class ClientsScreen(Screen):
         pop.background_color = GR_BG
         content.add_widget(self._gr_auto_label(
             "Здесь записано, когда вы обнуляли текущую прибыль или вычитали из неё.\n"
-            "Общая прибыль от этого не меняется. «ВЕРНУТЬ» — отменить запись.",
+            "Общая прибыль от этого не меняется.",
             font='13sp', color=(0.62, 0.67, 0.74, 1)))
         scroll = ScrollView()
         grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
@@ -1810,7 +1810,7 @@ class ClientsScreen(Screen):
             has = 'before' in e and 'after' in e
             tail = (f"\n[color=#7F8A99]было {rub(e['before'])} р, стало {rub(e['after'])} р[/color]" if has else '')
             if kind == 'обнулено':
-                head = f"[b]Обнулили текущую[/b]  [color=#5FD3FF]было {rub(amt)} р, стало 0[/color]"
+                head = f"[b]Обнулили текущую[/b]\n[color=#5FD3FF]было {rub(amt)} р, стало 0[/color]"
                 tail = ''
             elif kind == 'вычтено':
                 head = f"[b]Вычли[/b]  [color=#FFB74D]−{rub(amt)} р[/color]"
@@ -1829,17 +1829,41 @@ class ClientsScreen(Screen):
                 return
             for e in reversed(takes):
                 lbl = self._gr_auto_label(describe(e), font='15sp', color=GR_TEXT, halign='left')
-                x = RoundedButton(text="ВЕРНУТЬ", bg_color=GR_PANEL, border_color=GR_BORDER, size_hint=(None, None),
-                                  width=_sp(84), height=_sp(40), radius=GR_RADIUS, font_size='13sp', bold=True)
-                x.bind(on_release=lambda b, ent=e: undo(ent))
+                x = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, None),
+                               width=_sp(46), height=_sp(40), radius=GR_RADIUS)
+                x.bind(on_release=lambda b, ent=e: details(ent))
                 row = BoxLayout(orientation='horizontal', spacing=_sp(8), size_hint_y=None)
                 box = self._gr_panel([lbl], pad=8)
                 row.add_widget(box)
-                xw = AnchorLayout(size_hint_x=None, width=_sp(84), anchor_y='center')
+                xw = AnchorLayout(size_hint_x=None, width=_sp(46), anchor_y='center')
                 xw.add_widget(x)
                 row.add_widget(xw)
                 box.bind(height=lambda w, h, r=row: setattr(r, 'height', max(h, _sp(44))))
                 grid.add_widget(row)
+
+        def details(ent):
+            """Подробно про запись и отмена её (текущая вернётся как была)."""
+            amt = safe_float(ent.get('amount'))
+            box = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+            dp_ = TopMenuPopup(title="ЗАПИСЬ", content=box, size_hint=(0.94, 0.7))
+            dp_.background_color = GR_BG
+            box.add_widget(self._gr_panel([self._gr_auto_label(describe(ent), font='16sp', color=GR_TEXT, halign='left')]))
+            back = 'прибавится' if amt >= 0 else 'вычтется'
+            box.add_widget(self._gr_auto_label(
+                f"Если сделали по ошибке — отмените запись.\nК текущей прибыли {back} {rub(abs(amt))} р,\n"
+                f"она станет такой, как была до этого.\nОбщая прибыль и долги не меняются.",
+                font='14sp', color=(0.62, 0.67, 0.74, 1)))
+            b_undo = RoundedButton(text="ОТМЕНИТЬ ЭТУ ЗАПИСЬ", bg_color=(0.45, 0.17, 0.17, 1), border_color=GR_BORDER,
+                                   size_hint_y=None, height=_sp(50), bold=True, font_size='15sp', radius=GR_RADIUS)
+
+            def _do(*a):
+                dp_.dismiss()
+                undo(ent)
+            b_undo.bind(on_release=_do)
+            box.add_widget(b_undo)
+            box.add_widget(Widget())
+            box.add_widget(self.get_bottom_buttons(dp_, cancel_text="ЗАКРЫТЬ"))
+            dp_.open()
 
         def undo(ent):
             ok, msg = app.undo_take(ent)
