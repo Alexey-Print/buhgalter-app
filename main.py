@@ -3214,8 +3214,8 @@ class ClientsScreen(Screen):
             w = format_num_simple(e.get('width') or 0)
             txt = (f"[color=#AAB4C8]{e.get('date', '')}[/color]   [b]{names.get(e.get('color'), 'РУЛОН')}[/b]"
                    f"{(' ' + w + ' м') if safe_float(e.get('width')) else ''}\n"
-                   f"[b][color={col}]{kind} {sign}{format_num_simple(e.get('m', 0))} м[/color][/b]\n"
-                   f"[color=#7F8A99]{_was(e)}осталось {format_num_simple(e.get('left', 0))} м[/color]")
+                   f"[b][color={col}]{'пришёл рулон' if e.get('note') == 'новый рулон' else kind} {sign}{format_num_simple(e.get('m', 0))} м[/color][/b]\n"
+                   f"[b][color=#E3E9F2]{_was(e)}осталось {format_num_simple(e.get('left', 0))} м[/color][/b]")
             grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8))
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
@@ -3278,6 +3278,22 @@ class ClientsScreen(Screen):
         _pair(("[b]ВСЕГО, м[/b]", (0.55, 0.6, 0.7, 1), in_tot), ("[b]ОСТАТОК, м[/b]", (0.41, 0.94, 0.68, 1), in_rem))
         _pair(("[b]ШИРИНА, м[/b]", (0.4, 0.8, 1, 1), in_w), ("[b]СПИСАТЬ РАСХОД[/b]", (1.0, 0.72, 0.3, 1), in_use))
 
+        # Пришёл новый рулон: одним нажатием прибавить 50 или 75 м к остатку (и к «всего»)
+        add_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=_sp(46))
+        add_row.add_widget(Label(text="[b]ПРИШЁЛ\nРУЛОН:[/b]", markup=True, font_size='14sp', halign='center',
+                                 color=(0.41, 0.94, 0.68, 1), size_hint_x=0.4))
+
+        def _add_m(m):
+            state['added'] = state.get('added', 0) + m
+            in_rem.text = format_num_simple(round(safe_float(in_rem.text) + m, 2))
+            in_tot.text = format_num_simple(round(safe_float(in_tot.text) + m, 2))
+        for _m in (50, 75):
+            b = RoundedButton(text=f"+{_m} м", bg_color=(0.16, 0.45, 0.32, 1), bold=True, radius=GR_RADIUS,
+                              font_size='18sp', size_hint_x=0.3)
+            b.bind(on_release=lambda x, m=_m: _add_m(m))
+            add_row.add_widget(b)
+        content.add_widget(add_row)
+
         def do_save(x):
             if getattr(pop, 'is_dismissing_flag', False):
                 return
@@ -3296,12 +3312,20 @@ class ClientsScreen(Screen):
             log = list(roll.get('log', []) or [])
             old_rem = safe_float(roll.get('remain', 0)) if not is_new else None
             now = datetime.now().strftime('%d.%m.%y %H:%M')
+            n_before = len(log)
             if is_new:
                 log.append({'date': now, 'kind': 'новый', 'm': round(rem_val, 2), 'left': round(rem_val, 2)})
-            elif abs(rem_val - old_rem) > 0.004:
-                diff = round(old_rem - rem_val, 2)
-                log.append({'date': now, 'kind': 'списано' if diff > 0 else 'добавлено',
-                            'm': abs(diff), 'left': round(rem_val, 2)})
+            else:
+                base = old_rem
+                added = state.get('added', 0)
+                if added:                       # кнопки «+50 / +75 м» — отдельной строкой
+                    base = round(old_rem + added, 2)
+                    log.append({'date': now, 'kind': 'добавлено', 'm': added, 'left': base, 'note': 'новый рулон'})
+                if abs(rem_val - base) > 0.004:
+                    diff = round(base - rem_val, 2)
+                    log.append({'date': now, 'kind': 'списано' if diff > 0 else 'добавлено',
+                                'm': abs(diff), 'left': round(rem_val, 2)})
+            new_entries = log[n_before:]
             data['log'] = log[-100:]
             snap = snapshot(app)
             # Общий журнал рулонов — не пропадёт, даже если рулон потом удалят
@@ -3309,20 +3333,19 @@ class ClientsScreen(Screen):
             if extra is None:
                 extra = app._extra_data = {}
             g_log = extra.setdefault('roll_log', [])
-            g_added = False
-            if log and (is_new or abs(rem_val - old_rem) > 0.004):
-                g_log.append(dict(log[-1], color=state['color'], width=data['width']))
-                g_added = True
-                if len(g_log) > 1000:
-                    del g_log[:len(g_log) - 1000]
+            g_added = len(new_entries)
+            for _e in new_entries:
+                g_log.append(dict(_e, color=state['color'], width=data['width']))
+            if len(g_log) > 1000:
+                del g_log[:len(g_log) - 1000]
             if is_new:
                 app.rolls.append(data)
             else:
                 app.rolls[ri] = data
             ok, message = commit(app, snap, 'рулон')
             if not ok:
-                if g_added and g_log:
-                    g_log.pop()
+                if g_added:
+                    del g_log[-g_added:]
                 pop.is_dismissing_flag = False
                 self._stub_popup('РУЛОН', message)
                 return
@@ -3347,7 +3370,7 @@ class ClientsScreen(Screen):
                     _b = {'списано': _l + _m, 'добавлено': _l - _m}.get(e.get('kind'))
                     _bt = f"было {format_num_simple(round(_b, 2))} → " if _b is not None else ""
                     _lines.append(f"{e.get('date', '')}  [color={col}]{e.get('kind', '')} {sign}{format_num_simple(e.get('m', 0))} м[/color]"
-                                  f"  [color=#7F8A99]{_bt.replace(' → ', ', ')}ост. {format_num_simple(e.get('left', 0))}[/color]")
+                                  f"  [b][color=#E3E9F2]{_bt.replace(' → ', ', ')}ост. {format_num_simple(e.get('left', 0))}[/color][/b]")
                 _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n" + "\n".join(_lines)
             else:
                 _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n[color=#7F8A99]пока пусто — появится после первого списания[/color]"

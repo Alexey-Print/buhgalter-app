@@ -125,13 +125,17 @@ class RollPaybackTests(unittest.TestCase):
             root = save_btns[-1].parent
             fields = [w for w in root.walk() if isinstance(w, TextInput) and w.hint_text.startswith('расход')]
             fields[0].text = '8'
+            plus50 = [b for b in made if b.text == '+50 м'][-1]
+            plus50.dispatch('on_release')                     # пришёл рулон 50 м: 30 + 50 − 8
             save_btns[-1].dispatch('on_release')
         finally:
             main.RoundedButton.__init__ = orig
         roll = self.app.rolls[0]
-        self.assertEqual(roll['remain'], '22')
-        g = self.app._extra_data['roll_log'][-1]                 # общий журнал (4.1)
-        self.assertEqual((g['kind'], g['m'], g['color']), ('списано', 8, 'black'))
+        self.assertEqual(roll['remain'], '72')
+        self.assertEqual(roll['total'], '100')
+        g = self.app._extra_data['roll_log'][-2:]                # общий журнал (4.1): две строки
+        self.assertEqual([(e['kind'], e['m']) for e in g], [('добавлено', 50), ('списано', 8)])
+        self.assertEqual(g[0]['left'], 80)
         self.screen.show_rolls_log()
         self.assertEqual(roll['log'][-1]['kind'], 'списано')
         self.assertEqual(roll['log'][-1]['m'], 8)
