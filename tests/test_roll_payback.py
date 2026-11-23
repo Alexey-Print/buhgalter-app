@@ -163,7 +163,24 @@ class RollPaybackTests(unittest.TestCase):
         self.screen._final_save(idx, '500 руб', None, 'banner_white', order_desc='1x1 x1шт')
         self.assertEqual(printed_meters(self.app, 'black'), (9.43, 2))
         self.assertEqual(printed_meters(self.app, 'black', datetime.now() + timedelta(hours=1)), (0, 0))
-        self.screen.show_rolls_log()
+        made = []
+        orig = main.RoundedButton.__init__
+
+        def rec(btn, **kw):
+            orig(btn, **kw); made.append(btn)
+        main.RoundedButton.__init__ = rec
+        try:
+            self.screen.show_rolls_log()
+            [b for b in made if isinstance(b, main.EditButton)][0].dispatch('on_release')   # чёрный
+            from kivy.uix.textinput import TextInput
+            save = [b for b in made if b.text == 'СОХРАНИТЬ'][-1]
+            inp = [w for w in save.parent.walk() if isinstance(w, TextInput)][0]
+            inp.text = '12'
+            save.dispatch('on_release')
+        finally:
+            main.RoundedButton.__init__ = orig
+        adj = self.app._extra_data['printed_adj']['black']
+        self.assertEqual(adj['m'], round(12 - 9.43, 2))
 
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)

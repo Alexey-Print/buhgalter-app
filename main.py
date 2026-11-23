@@ -3213,11 +3213,62 @@ class ClientsScreen(Screen):
         scroll.add_widget(grid)
         content.add_widget(scroll)
         # Сколько напечатано своей печатью с последней закупки (по размерам заказов)
+        def _fix(color, name, auto_m, since_key, adj):
+            """Вручную поправить «напечатано», если какой-то заказ не учёлся."""
+            box = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+            fp = TopMenuPopup(title=f"НАПЕЧАТАНО: {name}", content=box, size_hint=(0.94, 0.7))
+            fp.background_color = GR_BG
+            box.add_widget(self._gr_auto_label(
+                f"По заказам посчитано {format_num_simple(auto_m)} м.\nВпишите, сколько на самом деле —\n"
+                f"разница запомнится до следующей закупки.", font='14sp', color=(0.62, 0.67, 0.74, 1)))
+            box.add_widget(self._gr_auto_label("[b]НАПЕЧАТАНО НА САМОМ ДЕЛЕ, м[/b]", font='14sp'))
+            inp = self._gr_input(font='26sp', text=format_num_simple(round(auto_m + adj, 2)))
+            box.add_widget(inp)
+
+            def _save(*a_):
+                if getattr(fp, 'is_dismissing_flag', False):
+                    return
+                fp.is_dismissing_flag = True
+                snap = snapshot(app)
+                ext = getattr(app, '_extra_data', None)
+                if ext is None:
+                    ext = app._extra_data = {}
+                old = dict(ext.get('printed_adj') or {})
+                ext.setdefault('printed_adj', {})[color] = {'since': since_key,
+                                                            'm': round(safe_float(inp.text) - auto_m, 2)}
+                ok, message = commit(app, snap, 'напечатано: ручная правка')
+                if not ok:
+                    ext['printed_adj'] = old
+                    fp.is_dismissing_flag = False
+                    self._stub_popup('НАПЕЧАТАНО', message)
+                    return
+                fp.dismiss()
+                pop.dismiss()
+                self.show_rolls_log()
+
+            def _reset(*a_):
+                inp.text = format_num_simple(auto_m)
+                _save()
+            b_save = RoundedButton(text="СОХРАНИТЬ", bg_color=GR_ACCENT, size_hint_y=None, height=_sp(50),
+                                   bold=True, font_size='17sp', radius=GR_RADIUS)
+            b_save.bind(on_release=_save)
+            b_auto = RoundedButton(text="КАК ПО ЗАКАЗАМ", bg_color=GR_PANEL, border_color=GR_BORDER, size_hint_y=None,
+                                   height=_sp(46), bold=True, font_size='15sp', radius=GR_RADIUS)
+            b_auto.bind(on_release=_reset)
+            box.add_widget(b_save)
+            box.add_widget(b_auto)
+            box.add_widget(Widget())
+            box.add_widget(self.get_bottom_buttons(fp, cancel_text="ЗАКРЫТЬ"))
+            fp.open()
+
         def _dt(d):
             try:
                 return datetime.strptime(str(d)[:14], '%d.%m.%y %H:%M')
             except ValueError:
                 return None
+        extra = getattr(app, '_extra_data', None)
+        if extra is None:
+            extra = app._extra_data = {}
         for col_, nm in (('black', 'ЧЁРНЫЙ'), ('white', 'БЕЛЫЙ')):
             buys = [x for x in (_dt(e.get('date')) for e in entries
                                 if e.get('color') == col_ and (e.get('note') == 'закупка' or e.get('kind') == 'закупка')) if x]
@@ -3225,10 +3276,25 @@ class ClientsScreen(Screen):
             widths = [safe_float(r.get('width')) for r in app.rolls or [] if r.get('color') == col_ and safe_float(r.get('width'))]
             rw = widths[0] if widths else 3.2
             meters, cnt = printed_meters(app, col_, since, rw)
+            since_key = since.strftime('%d.%m.%y %H:%M') if since else ''
+            adj_rec = (extra.get('printed_adj') or {}).get(col_) or {}
+            adj = safe_float(adj_rec.get('m')) if adj_rec.get('since') == since_key else 0.0   # после новой закупки — с нуля
             when = f"с закупки {since.strftime('%d.%m.%y')}" if since else "за всё время"
+            adj_txt = (f"  [color=#AAB4C8](вручную {'+' if adj > 0 else '−'}{format_num_simple(abs(adj))})[/color]"
+                       if abs(adj) > 0.004 else '')
             txt = (f"[b]{nm}[/b] [color=#AAB4C8]{when}, заказов: {cnt}[/color]\n"
-                   f"[b][color=#FFD54F]напечатано ≈ {format_num_simple(meters)} м[/color][/b]")
-            grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8))
+                   f"[b][color=#FFD54F]напечатано ≈ {format_num_simple(round(meters + adj, 2))} м[/color][/b]{adj_txt}")
+            row = BoxLayout(orientation='horizontal', spacing=_sp(8), size_hint_y=None)
+            box = self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8)
+            row.add_widget(box)
+            eb = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, None),
+                            width=_sp(46), height=_sp(40), radius=GR_RADIUS)
+            eb.bind(on_release=lambda x, c=col_, n=nm, m=meters, k=since_key, a=adj: _fix(c, n, m, k, a))
+            holder = AnchorLayout(size_hint_x=None, width=_sp(46), anchor_y='center')
+            holder.add_widget(eb)
+            row.add_widget(holder)
+            box.bind(height=lambda w, h, r=row: setattr(r, 'height', max(h, _sp(44))))
+            grid.add_widget(row)
         if not entries:
             grid.add_widget(self._gr_auto_label("[color=#7A8494]Пока нет записей — появятся после первого списания[/color]",
                                                 font='15sp'))
