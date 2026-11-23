@@ -5589,11 +5589,32 @@ class BusinessApp(App):
         self.ensure_default_clients()
         ensure_ids(self.clients)
         self.migrate_profit_model()
+        self.migrate_roll_writeoff()
         if getattr(self, 'journal', None) is None:
             self.journal = []
         self._journal_base = journal_balances(self)
         self._migrate_rolls_if_needed()
         self.save_data()
+
+    def migrate_roll_writeoff(self):
+        """Однократно (4.5): заказы «Свой рулон» за 23.11.26, записанные до автосписания,
+        списывают метры с остатка — так попросил Алексей (чёрный 13.5 → −18.2 м)."""
+        extra = getattr(self, '_extra_data', None)
+        if extra is None:
+            extra = self._extra_data = {}
+        if extra.get('roll_writeoff_2311'):
+            return
+        todo = []
+        for c in self.clients:
+            if c.get('is_creditor'):
+                continue
+            for h in c.get('history', []):
+                if str(h.get('date', '')).startswith('23.11.26') and 'roll_m' not in h:
+                    todo.append((str(h.get('date', '')), c, h))
+        todo.sort(key=lambda t: t[0])
+        for _, c, h in todo:
+            consume_roll_for_order(self, c, h)
+        extra['roll_writeoff_2311'] = True
 
     def migrate_profit_model(self):
         """Однократно: прибыль считается без минуса рулона. Чтобы цифры на экране не прыгнули,

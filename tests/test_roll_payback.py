@@ -211,6 +211,29 @@ class RollPaybackTests(unittest.TestCase):
         self.screen.show_rolls_log()
         self.screen.show_rolls_inventory()
 
+    def test_migration_writes_off_2311_once(self):
+        import json
+        data = {'clients': [
+            {'name': 'САША', 'debt': '20000', 'cid': 's', 'history': [
+                {'oid': 'a', 'date': '23.11.26 12:10', 'desc': '6x3 x3шт', 'sum': '10800', 'mode': 'banner_black'},
+                {'oid': 'b', 'date': '23.11.26 12:11', 'desc': '4.5x3 x2шт', 'sum': '5400', 'mode': 'banner_black'},
+                {'oid': 'c', 'date': '23.11.26 12:12', 'desc': '2.6x4.1 x1шт', 'sum': '2132', 'mode': 'banner_black'},
+                {'oid': 'd', 'date': '22.11.26 12:12', 'desc': '1x1 x1шт', 'sum': '200', 'mode': 'banner_black'},
+                {'oid': 'e', 'date': '23.11.26 12:13', 'desc': '3x6 x1шт', 'sum': '2700', 'mode': 'banner_white'}]}],
+            'profit_correction': '0', 'roles_version': 1, 'profit_model': 2,
+            'rolls': [{'color': 'white', 'width': '3.2', 'total': '75', 'remain': '18'},
+                      {'color': 'black', 'width': '3.2', 'total': '50', 'remain': '13.5'}]}
+        with open(main.DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False)
+        app = main.BusinessApp(); main.App._running_app = app
+        app.load_data()
+        rem = {r['color']: r['remain'] for r in app.rolls}
+        self.assertEqual(rem, {'black': '-18.2', 'white': '11.9'})
+        app.save_data()
+        app2 = main.BusinessApp(); main.App._running_app = app2
+        app2.load_data()
+        self.assertEqual({r['color']: r['remain'] for r in app2.rolls}, rem)   # второй раз не списывает
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()

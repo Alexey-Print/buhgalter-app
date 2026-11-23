@@ -405,7 +405,8 @@ def consume_roll_for_order(app, client, item):
         if c.get('is_creditor'):
             continue
         for h in c.get('history', []):
-            if h is item or order_roll_color(h) != color or str(h.get('date', ''))[:8] != day:
+            # раскладка дня — только с заказами, которые уже списали метры (иначе сумма не сойдётся)
+            if h is item or 'roll_m' not in h or order_roll_color(h) != color or str(h.get('date', ''))[:8] != day:
                 continue
             sz = parse_size(h.get('desc'))
             if sz:
