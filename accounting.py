@@ -261,16 +261,18 @@ def roll_length(a, b, qty=1, roll_w=3.2):
     return round(one * qty, 2)
 
 
-def pack_length(pieces, roll_w=3.2, max_pieces=400):
+def pack_length(pieces, roll_w=3.2, max_pieces=400, margin=0.05):
     """Сколько метров рулона уйдёт на набор банеров [(a, b, штук), ...], если раскладывать их вместе:
     сначала большие, мелкие — в свободные полосы рядом (как на бумаге), остальное — новыми рядами.
-    Простая жадная раскладка «гильотиной»: точнее, чем по одному, но не идеал."""
+    Простая жадная раскладка «гильотиной»: точнее, чем по одному, но не идеал.
+    margin — поля вокруг каждого банера (по 5 см с каждой стороны → +10 см к каждому размеру)."""
     W, eps = float(roll_w) or 3.2, 1e-6
     items = []
     for a, b, q in pieces:
         a, b = float(a), float(b)
         if a <= 0 or b <= 0:
             continue
+        a, b = a + 2 * margin, b + 2 * margin
         items.extend([(min(a, b), max(a, b))] * max(1, int(q)))
         if len(items) > max_pieces:
             break

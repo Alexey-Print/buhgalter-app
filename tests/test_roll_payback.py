@@ -154,18 +154,18 @@ class RollPaybackTests(unittest.TestCase):
     def test_printed_meters_since_purchase(self):
         from accounting import printed_meters, roll_length
         from datetime import datetime, timedelta
-        self.assertEqual(roll_length(5.43, 2.5), 5.43)
-        self.assertEqual(roll_length(3, 2, 2), 4)
-        self.assertEqual(roll_length(4, 4), 5)
+        self.assertEqual(roll_length(5.43, 2.5), 5.53)          # +5 см полей с каждой стороны
+        self.assertEqual(roll_length(3, 2, 2), 4.2)
+        self.assertEqual(roll_length(4, 4), 5.25)
         from accounting import pack_length                                  # 4.4: мелкие рядом с большим
-        self.assertEqual(pack_length([(5.13, 2.35, 1), (0.6, 0.85, 5)]), 5.13)
-        self.assertEqual(roll_length(0.6, 0.85, 5), 1.2)
-        self.assertEqual(roll_length(1, 1, 10), 4)
+        self.assertEqual(pack_length([(5.13, 2.35, 1), (0.6, 0.85, 5)]), 5.23)
+        self.assertEqual(roll_length(0.6, 0.85, 5), 1.4)
+        self.assertEqual(roll_length(1, 1, 10), 5.5)
         idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
         for desc in ('5.43x2.5 x1шт', '3x2 x2шт'):
             self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_black', order_desc=desc))
         self.screen._final_save(idx, '500 руб', None, 'banner_white', order_desc='1x1 x1шт')
-        self.assertEqual(printed_meters(self.app, 'black'), (9.43, 2))
+        self.assertEqual(printed_meters(self.app, 'black'), (9.73, 2))
         self.assertEqual(printed_meters(self.app, 'black', datetime.now() + timedelta(hours=1)), (0, 0))
         made = []
         orig = main.RoundedButton.__init__
@@ -184,7 +184,7 @@ class RollPaybackTests(unittest.TestCase):
         finally:
             main.RoundedButton.__init__ = orig
         adj = self.app._extra_data['printed_adj']['black']
-        self.assertEqual(adj['m'], round(12 - 9.43, 2))
+        self.assertEqual(adj['m'], round(12 - 9.73, 2))
 
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)

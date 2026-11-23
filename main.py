@@ -2209,6 +2209,12 @@ class ClientsScreen(Screen):
         content.add_widget(btn)
         pop.open()
 
+    def _reopen_history(self, client):
+        app = App.get_running_app()
+        pos = [i for i, x in enumerate(app.clients) if x is client] if app else []
+        if len(pos) == 1:
+            self.show_history_popup(pos[0])
+
     def show_history_popup(self, idx):
         app = App.get_running_app()
         if not app:
@@ -2508,7 +2514,15 @@ class ClientsScreen(Screen):
                     lbl.bind(texture_size=lambda s, ts, r=row: setattr(r, 'height', max(64, ts[1] + 14)))
                     del_btn = RoundedButton(text="X", bg_color=(0.8, 0.2, 0.2, 1), size_hint_x=None, width=54, radius=12)
                     del_btn.bind(on_release=lambda x, order=item, day=date_str: delete_item_callback(order, day))
+                    # карандаш — исправить позицию (размеры, штуки, цену) без удаления
+                    ed_btn = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, None), width=54, height=54, radius=12)
+                    ed_btn.bind(on_release=lambda x, order=item: self.safe_transition(
+                        pop, self.show_order_item_edit, client, order,
+                        back_cb=lambda *a_: self._reopen_history(client)))
+                    ed_hold = AnchorLayout(size_hint_x=None, width=54, anchor_y='center')
+                    ed_hold.add_widget(ed_btn)
                     row.add_widget(lbl)
+                    row.add_widget(ed_hold)
                     row.add_widget(del_btn)
                     list_layout.add_widget(row)
 
@@ -4837,7 +4851,7 @@ class ClientsScreen(Screen):
         content.add_widget(self.get_bottom_buttons(pop, prev_cb=_back, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
-    def show_order_item_edit(self, client, item):
+    def show_order_item_edit(self, client, item, back_cb=None):
         app = App.get_running_app()
         if not app:
             return
@@ -4919,14 +4933,17 @@ class ClientsScreen(Screen):
             if not ok:
                 self._stub_popup('ИСПРАВЛЕНИЕ', message)
                 return
-            self.safe_transition(pop, self.show_order_edit_list, client)
+            if back_cb is not None:
+                self.safe_transition(pop, back_cb)
+            else:
+                self.safe_transition(pop, self.show_order_edit_list, client)
 
         btn = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1), size_hint_y=None, height=100,
                             bold=True, radius=24, font_size='21sp')
         btn.bind(on_release=save)
         content.add_widget(btn)
         content.add_widget(Widget())
-        content.add_widget(self.get_bottom_buttons(pop, prev_cb=lambda: self.show_order_edit_list(client), cancel_text="ЗАКРЫТЬ"))
+        content.add_widget(self.get_bottom_buttons(pop, prev_cb=(back_cb or (lambda: self.show_order_edit_list(client))), cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
     def save_quick_extra(self, client, day_str, kind, bill, paid=0.0):
