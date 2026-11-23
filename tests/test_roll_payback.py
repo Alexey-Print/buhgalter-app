@@ -151,6 +151,20 @@ class RollPaybackTests(unittest.TestCase):
         btn.dispatch('on_release'); self.assertEqual(ti.text, '-3500')
         btn.dispatch('on_release'); self.assertEqual(ti.text, '3500')
 
+    def test_printed_meters_since_purchase(self):
+        from accounting import printed_meters, roll_length
+        from datetime import datetime, timedelta
+        self.assertEqual(roll_length(5.43, 2.5), 5.43)
+        self.assertEqual(roll_length(3, 2, 2), 4)
+        self.assertEqual(roll_length(4, 4), 5)
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        for desc in ('5.43x2.5 x1шт', '3x2 x2шт'):
+            self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_black', order_desc=desc))
+        self.screen._final_save(idx, '500 руб', None, 'banner_white', order_desc='1x1 x1шт')
+        self.assertEqual(printed_meters(self.app, 'black'), (9.43, 2))
+        self.assertEqual(printed_meters(self.app, 'black', datetime.now() + timedelta(hours=1)), (0, 0))
+        self.screen.show_rolls_log()
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()

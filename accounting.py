@@ -247,6 +247,55 @@ def creditor_is_referenced(app, creditor):
         any(h.get('source_oid') for h in creditor.get('history', []) + creditor.get('archived_history', []))
 
 
+def roll_length(a, b, qty=1, roll_w=3.2):
+    """Сколько метров рулона уходит на банер a×b: кладём так, чтобы ушло меньше длины.
+    Обе стороны влезают — короткая; одна влезает — длинная; ни одна — со швом, по площади."""
+    a, b, qty, roll_w = float(a), float(b), max(1, int(qty)), float(roll_w) or 3.2
+    lo, hi = min(a, b), max(a, b)
+    if hi <= roll_w + 1e-9:
+        one = lo
+    elif lo <= roll_w + 1e-9:
+        one = hi
+    else:
+        one = a * b / roll_w
+    return round(one * qty, 2)
+
+
+_SIZE_RE = None
+
+
+def printed_meters(app, color, since=None, roll_w=3.2):
+    """Сколько метров напечатано своей печатью на банере цвета color ('white'/'black')
+    по заказам начиная с since (datetime или None — за всё время). → (метры, число заказов)."""
+    import re
+    from datetime import datetime
+    global _SIZE_RE
+    if _SIZE_RE is None:
+        _SIZE_RE = re.compile(r'([0-9]+(?:[.,][0-9]+)?)\s*[xх×]\s*([0-9]+(?:[.,][0-9]+)?)\s*x\s*([0-9]+)\s*шт')
+    mode = 'banner_' + color
+    total, count = 0.0, 0
+    for c in app.clients:
+        for h in c.get('history', []) + c.get('archived_history', []):
+            if h.get('mode') != mode or h.get('via_malevich'):
+                continue
+            if since is not None:
+                try:
+                    if datetime.strptime(str(h.get('date', ''))[:14], '%d.%m.%y %H:%M') < since:
+                        continue
+                except ValueError:
+                    try:
+                        if datetime.strptime(str(h.get('date', ''))[:8], '%d.%m.%y') < since.replace(hour=0, minute=0):
+                            continue
+                    except ValueError:
+                        continue
+            m = _SIZE_RE.search(str(h.get('desc', '')))
+            if not m:
+                continue
+            total += roll_length(m.group(1).replace(',', '.'), m.group(2).replace(',', '.'), m.group(3), roll_w)
+            count += 1
+    return round(total, 2), count
+
+
 def add_roll_log(app, entry):
     """Запись в общий журнал рулонов (_extra_data['roll_log']); дата ставится здесь."""
     from datetime import datetime

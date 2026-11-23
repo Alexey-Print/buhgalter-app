@@ -6,7 +6,7 @@ import time
 import math
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log
+from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log, printed_meters
 from datetime import datetime
 import transfer
 from collections import defaultdict
@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.2"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.3"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3212,6 +3212,23 @@ class ClientsScreen(Screen):
         grid.bind(minimum_height=grid.setter('height'))
         scroll.add_widget(grid)
         content.add_widget(scroll)
+        # Сколько напечатано своей печатью с последней закупки (по размерам заказов)
+        def _dt(d):
+            try:
+                return datetime.strptime(str(d)[:14], '%d.%m.%y %H:%M')
+            except ValueError:
+                return None
+        for col_, nm in (('black', 'ЧЁРНЫЙ'), ('white', 'БЕЛЫЙ')):
+            buys = [x for x in (_dt(e.get('date')) for e in entries
+                                if e.get('color') == col_ and (e.get('note') == 'закупка' or e.get('kind') == 'закупка')) if x]
+            since = max(buys) if buys else None
+            widths = [safe_float(r.get('width')) for r in app.rolls or [] if r.get('color') == col_ and safe_float(r.get('width'))]
+            rw = widths[0] if widths else 3.2
+            meters, cnt = printed_meters(app, col_, since, rw)
+            when = f"с закупки {since.strftime('%d.%m.%y')}" if since else "за всё время"
+            txt = (f"[b]{nm}[/b] [color=#AAB4C8]{when}, заказов: {cnt}[/color]\n"
+                   f"[b][color=#FFD54F]напечатано ≈ {format_num_simple(meters)} м[/color][/b]")
+            grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8))
         if not entries:
             grid.add_widget(self._gr_auto_label("[color=#7A8494]Пока нет записей — появятся после первого списания[/color]",
                                                 font='15sp'))
