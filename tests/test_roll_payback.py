@@ -81,7 +81,7 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.profit(), 500)
         self.assertEqual(self.app.profit_log[-1]['to_roll'], 500)
         self.assertEqual(self.app.rolls[-1]['color'], 'plenka')   # рулон плёнки в остатках
-        g = self.app._extra_data['roll_log'][-1]                          # закупка попала в историю (4.2)
+        g = [e for e in self.app._extra_data['roll_log'] if e.get('note') == 'закупка'][-1]   # закупка в истории (4.2)
         self.assertEqual((g['kind'], g['note'], g['m'], g['color']), ('новый', 'закупка', 50, 'plenka'))
         self.screen.show_rolls_log()
         self.assertEqual(self.app.get_totals()[0], 2500)  # «ПЛЁНКА» не считается долгом клиента
@@ -185,6 +185,31 @@ class RollPaybackTests(unittest.TestCase):
             main.RoundedButton.__init__ = orig
         adj = self.app._extra_data['printed_adj']['black']
         self.assertEqual(adj['m'], round(12 - 9.73, 2))
+
+    def test_order_writes_off_roll_meters(self):
+        from accounting import purchase_banner as pb
+        self.app.rolls = [{'color': 'black', 'width': '3.2', 'total': '50', 'remain': '13.5'}]
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.assertTrue(self.screen._final_save(idx, '5 400 руб', None, 'banner_black', order_desc='4.5x3 x2шт'))
+        first = self.sasha['history'][-1]
+        self.assertEqual(first['roll_m'], 9.2)                      # 2 × (4.5+0.1), ширина 3.1 влезает
+        self.assertEqual(self.app.rolls[0]['remain'], '4.3')
+        self.assertTrue(self.screen._final_save(idx, '2 132 руб', None, 'banner_black', order_desc='2.6x4.1 x1шт'))
+        self.assertEqual(self.app.rolls[0]['remain'], '0.1')         # 2.7 поперёк, длина 4.2
+        self.assertTrue(self.screen._final_save(idx, '3 600 руб', None, 'banner_black', order_desc='6x3 x1шт'))
+        self.assertEqual(self.app.rolls[0]['remain'], '-6')          # в минус — до нового рулона
+        self.assertTrue(pb(self.app, 'black', 9000, '3.2', 50)[0])  # закупка с метрами — в тот же рулон
+        self.assertEqual(len([r for r in self.app.rolls if r['color'] == 'black']), 1)
+        self.assertEqual(self.app.rolls[0]['remain'], '44')
+        self.assertTrue(reverse_order(self.app, self.sasha, first)[0])
+        self.assertEqual(self.app.rolls[0]['remain'], '53.2')        # отмена заказа вернула метры
+        self.assertTrue(self.screen._final_save(idx, '500 руб', None, 'banner_white', order_desc='1x1 x1шт',
+                                                via_malevich=False))
+        self.assertEqual([r['color'] for r in self.app.rolls], ['black', 'white'])   # белого не было — заведён
+        self.assertEqual(self.app.rolls[1]['remain'], '-1.1')
+        self.assertEqual(main.check_integrity(self.app), [])
+        self.screen.show_rolls_log()
+        self.screen.show_rolls_inventory()
 
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)

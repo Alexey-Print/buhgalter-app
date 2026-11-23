@@ -126,9 +126,12 @@ class AccountingTests(unittest.TestCase):
     def test_purchase_profit_negative_and_both_colors(self):
         self.app.profit_correction = money(5000 - main.safe_float(self.sasha['debt']))
         self.assertEqual(self.app.get_totals()[3], 5000)
+        whites = [r for r in self.app.rolls if r.get('color', 'white') == 'white']
+        was = main.safe_float(whites[0]['remain']) if whites else 0
         self.assertTrue(purchase_banner(self.app, 'white', 10000.01, '3.2', 50)[0])
         self.assertEqual(self.app.get_totals()[3], 5000)   # закупка рулона прибыль не трогает (3.2)
-        self.assertEqual(self.app.rolls[-1]['remain'], '50')
+        white = [r for r in self.app.rolls if r.get('color', 'white') == 'white'][0]
+        self.assertEqual(main.safe_float(white['remain']), was + 50)   # 4.5: метры в тот же рулон
         self.assertTrue(purchase_banner(self.app, 'black', 2000)[0])
         before = self.app.get_totals()
         order = self.add(amount=11000.02)

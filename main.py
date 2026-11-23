@@ -6,7 +6,7 @@ import time
 import math
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log, printed_meters
+from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log, printed_meters, consume_roll_for_order, roll_log_len, roll_log_trim
 from datetime import datetime
 import transfer
 from collections import defaultdict
@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.4"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.5"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3141,14 +3141,15 @@ class ClientsScreen(Screen):
                 w = roll.get('width', '0')
                 rem = format_num_simple(roll.get('remain', '0'))
                 tot = format_num_simple(roll.get('total', '0'))
-                text = f"[b][color=#FFFFFF]{disp}[/color][/b]  [color=#9A9A9A]{w} м[/color]   [b][color=#5FD39B]{rem} м[/color][/b] [color=#7A8494]/ {tot}[/color]"
+                _rcol = '#FF6B6B' if safe_float(roll.get('remain')) < 0 else '#5FD39B'
+                text = f"[b][color=#FFFFFF]{disp}[/color][/b]  [color=#9A9A9A]{w} м[/color]   [b][color={_rcol}]{rem} м[/color][/b] [color=#7A8494]/ {tot}[/color]"
                 r = QuickDebtRow(name="", amount_text="", accent=accent)
                 r.clear_widgets()
                 lbl = Label(text=text, markup=True, font_size='20sp', halign='left', valign='middle')
                 lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
                 # одна строка: цвет рулона не уезжает за край при длинных цифрах
                 self._fit_font(lbl, max_sp=20, min_sp=12,
-                               fallback=f"[b][color=#FFFFFF]{disp}[/color][/b]  [b][color=#5FD39B]{rem} м[/color][/b] [color=#7A8494]/ {tot}[/color]")
+                               fallback=f"[b][color=#FFFFFF]{disp}[/color][/b]  [b][color={_rcol}]{rem} м[/color][/b] [color=#7A8494]/ {tot}[/color]")
                 r.add_widget(lbl)
                 r.bind(on_release=lambda x, i=ri: self._roll_edit_popup(i, pop))
                 grid.add_widget(r)
@@ -3327,6 +3328,13 @@ class ClientsScreen(Screen):
             kind = e.get('kind', '')
             col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0', 'удалён': '#FF8A80'}.get(kind, '#5FD3FF')
             sign = {'списано': '−', 'добавлено': '+'}.get(kind, '')
+            who = (f"\n[color=#C8D2E0]{escape_markup(str(e.get('who')))}[/color]" if e.get('who') else '')
+            if e.get('note') == 'заказ':
+                kind = 'по заказу списано'
+            elif e.get('note') == 'отмена заказа':
+                kind = 'заказ отменён, вернули'
+            elif e.get('note') == 'закупка' and kind == 'добавлено':
+                kind = 'закупка, добавлено'
             if kind == 'закупка' and 'money' in e:
                 txt = (f"[color=#AAB4C8]{e.get('date', '')}[/color]   [b]{names.get(e.get('color'), 'РУЛОН')}[/b]\n"
                        f"[b][color=#5FD3FF]закупка на {rub(e['money'])} р[/color][/b]\n"
@@ -3341,7 +3349,7 @@ class ClientsScreen(Screen):
             txt = (f"[color=#AAB4C8]{e.get('date', '')}[/color]   [b]{names.get(e.get('color'), 'РУЛОН')}[/b]"
                    f"{(' ' + w + ' м') if safe_float(e.get('width')) else ''}\n"
                    f"[b][color={col}]{'пришёл рулон' if e.get('note') == 'новый рулон' else kind} {sign}{format_num_simple(e.get('m', 0))} м[/color][/b]\n"
-                   f"[b][color=#E3E9F2]{_was(e)}осталось {format_num_simple(e.get('left', 0))} м[/color][/b]")
+                   f"[b][color=#E3E9F2]{_was(e)}осталось {format_num_simple(e.get('left', 0))} м[/color][/b]{who}")
             grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8))
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
@@ -3427,8 +3435,9 @@ class ClientsScreen(Screen):
             use_val = safe_float(in_use.text)
             rem_val = safe_float(in_rem.text)
             if use_val > 0:
-                rem_val = max(0.0, rem_val - use_val)
+                rem_val = round(rem_val - use_val, 2)   # может уйти в минус — напечатано в долг до нового рулона
             data = {
+                'rid': roll.get('rid') or uuid.uuid4().hex[:10],
                 'color': state['color'],
                 'width': (in_w.text.strip() or '0'),
                 'total': format_num_simple(in_tot.text or '0'),
@@ -4469,6 +4478,7 @@ class ClientsScreen(Screen):
         if not app:
             return False
         snap = snapshot(app)
+        _n_log = roll_log_len(app)
         try:
             ensure_ids(app.clients)
             val = safe_float(res_t.replace(' руб', ''))
@@ -4572,11 +4582,14 @@ class ClientsScreen(Screen):
                     'profit': _op, 'to_roll': round(total_deducted, 2)})
             except Exception:
                 pass
+            # Свой рулон: метры сразу списываются с остатка (может уйти в минус до прихода рулона)
+            consume_roll_for_order(app, c, hist_item)
             app._op = f"заказ: {order_desc or hist_item['desc']}"
             if app.save_data() is not True:
                 raise OSError('Сохранение не подтверждено')
         except Exception as exc:
             restore(app, snap)
+            roll_log_trim(app, _n_log)
             self._stub_popup('СОХРАНЕНИЕ ЗАКАЗА', 'Заказ не сохранён: ' + str(exc))
             return False
         self.refresh_list()

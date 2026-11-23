@@ -167,8 +167,10 @@ def reverse_order(app, client, item):
         if possible:
             return False, 'Автоматическая отмена недоступна: старый заказ не связан точно с историей прибыли. ' + LEGACY_HINT
     state = snapshot(app)
+    n_log = roll_log_len(app)
     try:
         history.pop(next(i for i, h in enumerate(history) if h is item))
+        refund_roll_for_order(app, client, item)
         client['debt'] = money(number(client.get('debt')) - val)
         app.profit_correction = money(number(app.profit_correction) + cost)
         if linked:
@@ -184,6 +186,7 @@ def reverse_order(app, client, item):
             raise OSError('Сохранение не подтверждено')
     except Exception as exc:
         restore(app, state)
+        roll_log_trim(app, n_log)
         return False, 'Не удалось сохранить; операция отменена: ' + str(exc)
     return True, 'Заказ удалён'
 
@@ -346,6 +349,104 @@ def printed_meters(app, color, since=None, roll_w=3.2):
     return round(total, 2), count
 
 
+def order_roll_color(h):
+    """С какого рулона печатался заказ: 'white' / 'black' / 'plenka' или None (исполнитель, такси, доп, материал клиента)."""
+    if h.get('via_malevich') or h.get('source_oid'):
+        return None
+    m = str(h.get('mode', ''))
+    if m == 'banner_white':
+        return 'white'
+    if m == 'banner_black':
+        return 'black'
+    if m.startswith('plenka'):
+        return 'plenka'
+    return None
+
+
+def parse_size(desc):
+    """«5.43x2.5 x1шт» → (5.43, 2.5, 1) или None."""
+    import re
+    global _SIZE_RE
+    if _SIZE_RE is None:
+        _SIZE_RE = re.compile(r'([0-9]+(?:[.,][0-9]+)?)\s*[xх×]\s*([0-9]+(?:[.,][0-9]+)?)\s*x\s*([0-9]+)\s*шт')
+    m = _SIZE_RE.search(str(desc or ''))
+    if not m:
+        return None
+    return float(m.group(1).replace(',', '.')), float(m.group(2).replace(',', '.')), int(m.group(3))
+
+
+def pick_roll(app, color):
+    """Рулон этого цвета, с которого списывать (первый в списке); нет — заводится пустой."""
+    import uuid
+    if getattr(app, 'rolls', None) is None:
+        app.rolls = []
+    for r in app.rolls:
+        if r.get('color', 'white') == color:
+            if not r.get('rid'):
+                r['rid'] = uuid.uuid4().hex[:10]
+            return r
+    r = {'color': color, 'width': '3.2', 'total': '0', 'remain': '0', 'rid': uuid.uuid4().hex[:10]}
+    app.rolls.append(r)
+    return r
+
+
+def consume_roll_for_order(app, client, item):
+    """Списать метры с рулона за заказ «Свой рулон». Заказы того же дня и цвета раскладываются
+    вместе: списывается прибавка к общей длине дня. Остаток может уйти в минус — до прихода рулона."""
+    color = order_roll_color(item)
+    size = parse_size(item.get('desc'))
+    if color is None or size is None or client.get('is_creditor'):
+        return 0.0
+    roll = pick_roll(app, color)
+    w = number(roll.get('width')) or 3.2
+    day = str(item.get('date', ''))[:8]
+    others = []
+    for c in app.clients:
+        if c.get('is_creditor'):
+            continue
+        for h in c.get('history', []):
+            if h is item or order_roll_color(h) != color or str(h.get('date', ''))[:8] != day:
+                continue
+            sz = parse_size(h.get('desc'))
+            if sz:
+                others.append(sz)
+    delta = round(max(0.0, pack_length(others + [size], w) - pack_length(others, w)), 2)
+    if delta <= 0:
+        item['roll_m'], item['roll_rid'] = 0.0, roll['rid']
+        return 0.0
+    left = round(number(roll.get('remain')) - delta, 2)
+    roll['remain'] = money(left)
+    item['roll_m'], item['roll_rid'] = delta, roll['rid']
+    add_roll_log(app, {'kind': 'списано', 'm': delta, 'left': left, 'color': color, 'width': roll.get('width'),
+                       'note': 'заказ', 'who': f"{client.get('name', '')}: {str(item.get('desc', '')).strip()}"})
+    return delta
+
+
+def refund_roll_for_order(app, client, item):
+    """Вернуть на рулон метры удалённого/исправляемого заказа."""
+    m = number(item.get('roll_m'))
+    if m <= 0:
+        return 0.0
+    roll = next((r for r in getattr(app, 'rolls', []) or [] if r.get('rid') == item.get('roll_rid')), None)
+    if roll is None:
+        return 0.0                      # рулон уже удалён — возвращать некуда
+    left = round(number(roll.get('remain')) + m, 2)
+    roll['remain'] = money(left)
+    add_roll_log(app, {'kind': 'добавлено', 'm': m, 'left': left, 'color': roll.get('color'), 'width': roll.get('width'),
+                       'note': 'отмена заказа', 'who': f"{client.get('name', '')}: {str(item.get('desc', '')).strip()}"})
+    return m
+
+
+def roll_log_len(app):
+    return len((getattr(app, '_extra_data', None) or {}).get('roll_log', []) or [])
+
+
+def roll_log_trim(app, n):
+    log = (getattr(app, '_extra_data', None) or {}).get('roll_log')
+    if log is not None:
+        del log[n:]
+
+
 def add_roll_log(app, entry):
     """Запись в общий журнал рулонов (_extra_data['roll_log']); дата ставится здесь."""
     from datetime import datetime
@@ -368,6 +469,7 @@ def purchase_banner(app, color, amount, width='', length=0):
     if index is None:
         return False, 'Материал не найден'
     state = snapshot(app)
+    n_log = roll_log_len(app)
     try:
         client = app.clients[index]
         debt = number(client.get('debt'))
@@ -377,14 +479,24 @@ def purchase_banner(app, color, amount, width='', length=0):
         from datetime import datetime
         client.setdefault('purchase_log', []).append({'date': datetime.now().strftime('%d.%m.%y %H:%M'), 'sum': money(amount)})
         if length > 0:
-            app.rolls.append({'color': color, 'width': str(width).strip() or '0', 'total': money(length), 'remain': money(length)})
-            add_roll_log(app, {'kind': 'новый', 'm': round(length, 2), 'left': round(length, 2),
-                               'color': color, 'width': str(width).strip() or '0', 'note': 'закупка'})
+            same = next((r for r in app.rolls if r.get('color', 'white') == color), None)
+            if same is not None:        # рулон этого цвета уже есть — метры прибавляются к нему (минус гасится)
+                left = round(number(same.get('remain')) + length, 2)
+                same['remain'] = money(left)
+                same['total'] = money(number(same.get('total')) + length)
+                add_roll_log(app, {'kind': 'добавлено', 'm': round(length, 2), 'left': left,
+                                   'color': color, 'width': same.get('width'), 'note': 'закупка'})
+            else:
+                app.rolls.append({'color': color, 'width': str(width).strip() or '0', 'total': money(length),
+                                  'remain': money(length)})
+                add_roll_log(app, {'kind': 'новый', 'm': round(length, 2), 'left': round(length, 2),
+                                   'color': color, 'width': str(width).strip() or '0', 'note': 'закупка'})
         app._op = 'закупка плёнки' if color == 'plenka' else 'закупка банера'
         if app.save_data() is not True:
             raise OSError('Сохранение не подтверждено')
     except Exception as exc:
         restore(app, state)
+        roll_log_trim(app, n_log)
         return False, 'Закупка не сохранена: ' + str(exc)
     return True, 'Закупка сохранена'
 
