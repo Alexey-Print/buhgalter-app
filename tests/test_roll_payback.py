@@ -322,6 +322,29 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.black()['debt'], '13 000')
         self.assertEqual(self.profit(), 0)
 
+    def test_purchase_menu_opens_roll_window(self):
+        made = []
+        orig = main.RoundedButton.__init__
+
+        def rec(btn, **kw):
+            orig(btn, **kw); made.append(btn)
+        main.RoundedButton.__init__ = rec
+        try:
+            self.app.rolls = [{'color': 'white', 'width': '3.2', 'total': '75', 'remain': '-2'}]
+            self.screen._open_purchase_roll('white')
+            from kivy.uix.textinput import TextInput
+            save = [b for b in made if b.text == 'СОХРАНИТЬ'][-1]
+            [b for b in made if b.text == '+75 м'][-1].dispatch('on_release')
+            pay = [w for w in save.parent.walk() if isinstance(w, TextInput) and w.hint_text == '0'][0]
+            pay.text = '12000'
+            save.dispatch('on_release')
+        finally:
+            main.RoundedButton.__init__ = orig
+        self.assertEqual(len(self.app.rolls), 1)
+        self.assertEqual(self.app.rolls[0]['remain'], '73')
+        white = self.app.clients[self.app.get_special_clients()[2]]
+        self.assertEqual(white['debt'], '12 000')
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()

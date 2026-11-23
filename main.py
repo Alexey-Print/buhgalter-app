@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.8"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.9"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3063,11 +3063,11 @@ class ClientsScreen(Screen):
         content = BoxLayout(orientation='vertical', spacing=20, padding=20)
         pop = AppPopup(title="ЗАКУПКА", content=content, size_hint=(0.9, 0.75))
         b_w = RoundedButton(text="БЕЛЫЙ БАНЕР", bg_color=(0.95, 0.95, 0.95, 1), color=(0,0,0,1), height=130, size_hint_y=None, font_size='24sp', bold=True)
-        b_w.bind(on_release=lambda x: self.safe_transition(pop, self.show_zakupka_input_popup, "white", prev_cb=lambda p=None: self.show_zakupka_menu(instance)))
+        b_w.bind(on_release=lambda x: self.safe_transition(pop, self._open_purchase_roll, "white"))
         b_b = RoundedButton(text="ЧЕРНЫЙ БАНЕР", bg_color=(0.1, 0.1, 0.1, 1), height=130, size_hint_y=None, font_size='24sp', bold=True)
-        b_b.bind(on_release=lambda x: self.safe_transition(pop, self.show_zakupka_input_popup, "black", prev_cb=lambda p=None: self.show_zakupka_menu(instance)))
+        b_b.bind(on_release=lambda x: self.safe_transition(pop, self._open_purchase_roll, "black"))
         b_p = RoundedButton(text="ПЛЁНКА", bg_color=(0.12, 0.45, 0.3, 1), height=130, size_hint_y=None, font_size='24sp', bold=True)
-        b_p.bind(on_release=lambda x: self.safe_transition(pop, self.show_zakupka_input_popup, "plenka", prev_cb=lambda p=None: self.show_zakupka_menu(instance)))
+        b_p.bind(on_release=lambda x: self.safe_transition(pop, self._open_purchase_roll, "plenka"))
         content.add_widget(b_w); content.add_widget(b_b); content.add_widget(b_p); content.add_widget(Widget())
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
@@ -3357,7 +3357,16 @@ class ClientsScreen(Screen):
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
-    def _roll_edit_popup(self, ri, list_pop):
+    def _open_purchase_roll(self, color):
+        """«ЗАКУПКА» → то же окно рулона, что в остатках: метры (+50/+75) и «заплатил за рулон»."""
+        app = App.get_running_app()
+        if not app:
+            return
+        ri = next((i for i, r in enumerate(app.rolls or []) if r.get('color', 'white') == color), None)
+        name = {'white': 'БЕЛЫЙ', 'black': 'ЧЁРНЫЙ', 'plenka': 'ПЛЁНКА'}[color]
+        self._roll_edit_popup(ri, None, preset_color=color, title=f"ЗАКУПКА: {name}")
+
+    def _roll_edit_popup(self, ri, list_pop, preset_color=None, title=None):
         app = App.get_running_app()
         if not app:
             return
@@ -3365,9 +3374,9 @@ class ClientsScreen(Screen):
             app.rolls = []
         is_new = ri is None
         roll = {} if is_new else app.rolls[ri]
-        state = {'color': roll.get('color', 'white')}
+        state = {'color': preset_color or roll.get('color', 'white')}
         content = BoxLayout(orientation='vertical', spacing=10, padding=[16, 10, 16, 10])
-        pop = TopMenuPopup(title=("НОВЫЙ РУЛОН" if is_new else "РУЛОН"), content=content, size_hint=(0.94, 0.86))
+        pop = TopMenuPopup(title=title or ("НОВЫЙ РУЛОН" if is_new else "РУЛОН"), content=content, size_hint=(0.94, 0.86))
         pop.background_color = (0.043, 0.055, 0.08, 1)
 
         # выбор цвета
