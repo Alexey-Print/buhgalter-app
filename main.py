@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.5"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.6"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -5602,7 +5602,7 @@ class BusinessApp(App):
         extra = getattr(self, '_extra_data', None)
         if extra is None:
             extra = self._extra_data = {}
-        if extra.get('roll_writeoff_2311'):
+        if extra.get('roll_writeoff_2311b'):     # «b»: теперь и заказы через исполнителя (рулоны у Олега)
             return
         todo = []
         for c in self.clients:
@@ -5614,7 +5614,7 @@ class BusinessApp(App):
         todo.sort(key=lambda t: t[0])
         for _, c, h in todo:
             consume_roll_for_order(self, c, h)
-        extra['roll_writeoff_2311'] = True
+        extra['roll_writeoff_2311b'] = True
 
     def migrate_profit_model(self):
         """Однократно: прибыль считается без минуса рулона. Чтобы цифры на экране не прыгнули,

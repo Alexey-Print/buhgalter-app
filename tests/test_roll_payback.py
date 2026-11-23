@@ -219,7 +219,12 @@ class RollPaybackTests(unittest.TestCase):
                 {'oid': 'b', 'date': '23.11.26 12:11', 'desc': '4.5x3 x2шт', 'sum': '5400', 'mode': 'banner_black'},
                 {'oid': 'c', 'date': '23.11.26 12:12', 'desc': '2.6x4.1 x1шт', 'sum': '2132', 'mode': 'banner_black'},
                 {'oid': 'd', 'date': '22.11.26 12:12', 'desc': '1x1 x1шт', 'sum': '200', 'mode': 'banner_black'},
-                {'oid': 'e', 'date': '23.11.26 12:13', 'desc': '3x6 x1шт', 'sum': '2700', 'mode': 'banner_white'}]}],
+                {'oid': 'e', 'date': '23.11.26 12:13', 'desc': '3x6 x1шт', 'sum': '2700', 'mode': 'banner_white'}]},
+            {'name': 'МАЛЕВИЧ', 'debt': '1808', 'cid': 'm', 'history': [
+                {'oid': 'f', 'date': '23.11.26 13:30', 'desc': '5.13x2.35 x1шт', 'sum': '1808', 'mode': 'banner_white',
+                 'via_malevich': True, 'creditor_name': 'ОЛЕГ', 'creditor_id': 'o', 'print_cost': 0}]},
+            {'name': 'МАЛЕВИЧ', 'debt': '0', 'cid': 'mk', 'is_creditor': True, 'history': []},
+            {'name': 'ОЛЕГ', 'debt': '0', 'cid': 'o', 'is_creditor': True, 'history': []}],
             'profit_correction': '0', 'roles_version': 1, 'profit_model': 2,
             'rolls': [{'color': 'white', 'width': '3.2', 'total': '75', 'remain': '18'},
                       {'color': 'black', 'width': '3.2', 'total': '50', 'remain': '13.5'}]}
@@ -228,7 +233,7 @@ class RollPaybackTests(unittest.TestCase):
         app = main.BusinessApp(); main.App._running_app = app
         app.load_data()
         rem = {r['color']: r['remain'] for r in app.rolls}
-        self.assertEqual(rem, {'black': '-18.2', 'white': '11.9'})
+        self.assertEqual(rem, {'black': '-18.2', 'white': '6.67'})   # белый: 3x6 Саши и 5.13x2.35 Малевича (через Олега)
         app.save_data()
         app2 = main.BusinessApp(); main.App._running_app = app2
         app2.load_data()
