@@ -247,7 +247,7 @@ class RollPaybackTests(unittest.TestCase):
         app = main.BusinessApp(); main.App._running_app = app
         app.load_data()
         rem = {r['color']: r['remain'] for r in app.rolls}
-        self.assertEqual(rem, {'black': '-18.2', 'white': '6.67'})   # белый: 3x6 Саши и 5.13x2.35 Малевича (через Олега)
+        self.assertEqual(rem, {'black': '-18.2', 'white': '6.67'})   # белый: 3x6 Саши и 5.13x2.35 Малевича — по отдельности
         app.save_data()
         app2 = main.BusinessApp(); main.App._running_app = app2
         app2.load_data()
@@ -262,10 +262,32 @@ class RollPaybackTests(unittest.TestCase):
         for d in ('5.13x2.35 x1шт', '0.85x0.6 x5шт'):
             self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_white', order_desc=d,
                                                     via_malevich=True, creditor_idx=oleg))
-        self.assertEqual(self.app.rolls[0]['remain'], '12.77')          # мелкие встали рядом с большим
+        self.assertEqual(self.app.rolls[0]['remain'], '12.77')          # мелкие встали рядом с большим (тот же клиент)
         last = self.app._extra_data['roll_log'][-1]
         self.assertEqual((last['m'], last['note']), (0.0, 'рядом'))
+        self.app.clients.append({'name': 'СЕРЕГА', 'debt': '0', 'history': []})       # другой клиент — отдельно
+        main.ensure_ids(self.app.clients)
+        self.assertTrue(self.screen._final_save(len(self.app.clients) - 1, '510 руб', None, 'banner_white',
+                                                order_desc='0.85x0.6 x5шт', via_malevich=True, creditor_idx=oleg))
+        self.assertEqual(self.app.rolls[0]['remain'], '11.37')          # 3 в ряд, 2 ряда по 0.7
         self.screen.show_rolls_log()
+
+    def test_migration_per_client_recounts_zero(self):
+        import json
+        data = {'clients': [
+            {'name': 'СЕРЕГА', 'debt': '510', 'cid': 's2', 'history': [
+                {'oid': 'g', 'date': '23.11.26 14:00', 'desc': '0.85x0.6 x5шт', 'sum': '510', 'mode': 'banner_white',
+                 'via_malevich': True, 'creditor_id': 'o', 'creditor_name': 'ОЛЕГ', 'print_cost': 0,
+                 'roll_m': 0.0, 'roll_rid': 'w1'}]},
+            {'name': 'МАЛЕВИЧ', 'debt': '0', 'cid': 'mk', 'is_creditor': True, 'history': []},
+            {'name': 'ОЛЕГ', 'debt': '0', 'cid': 'o', 'is_creditor': True, 'history': []}],
+            'profit_correction': '0', 'roles_version': 1, 'profit_model': 2, 'roll_writeoff_2311b': True,
+            'rolls': [{'color': 'white', 'width': '3.2', 'total': '75', 'remain': '6.67', 'rid': 'w1'}]}
+        with open(main.DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False)
+        app = main.BusinessApp(); main.App._running_app = app
+        app.load_data()
+        self.assertEqual(app.rolls[0]['remain'], '5.27')                 # 6.67 − 1.4
 
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)

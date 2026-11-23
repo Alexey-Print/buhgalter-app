@@ -6,7 +6,7 @@ import time
 import math
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log, printed_meters, consume_roll_for_order, roll_log_len, roll_log_trim
+from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log, printed_meters, consume_roll_for_order, roll_log_len, roll_log_trim, order_roll_color
 from datetime import datetime
 import transfer
 from collections import defaultdict
@@ -3220,7 +3220,7 @@ class ClientsScreen(Screen):
         pop = TopMenuPopup(title="ИСТОРИЯ СПИСАНИЙ", content=content, size_hint=(0.96, 0.92))
         pop.background_color = GR_BG
         content.add_widget(self._gr_auto_label(
-            "Списания, добавления и закупки рулонов. Сверху — последние.\n«Напечатано»: заказы одного дня раскладываются вместе.",
+            "Списания, добавления и закупки рулонов. Сверху — последние.\nПозиции одного клиента за день раскладываются вместе.",
             font='13sp', color=(0.62, 0.67, 0.74, 1)))
         scroll = ScrollView()
         grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
@@ -5593,6 +5593,7 @@ class BusinessApp(App):
         ensure_ids(self.clients)
         self.migrate_profit_model()
         self.migrate_roll_writeoff()
+        self.migrate_roll_writeoff_per_client()
         if getattr(self, 'journal', None) is None:
             self.journal = []
         self._journal_base = journal_balances(self)
@@ -5618,6 +5619,28 @@ class BusinessApp(App):
         for _, c, h in todo:
             consume_roll_for_order(self, c, h)
         extra['roll_writeoff_2311b'] = True
+
+    def migrate_roll_writeoff_per_client(self):
+        """Однократно (4.7): раскладка теперь внутри одного клиента. Заказы за 23.11.26, которые в 4.6
+        «встали рядом» с чужими (списано 0 м), пересчитываются отдельно (Серега после Малевича)."""
+        extra = getattr(self, '_extra_data', None)
+        if extra is None:
+            extra = self._extra_data = {}
+        if extra.get('roll_writeoff_2311c'):
+            return
+        todo = []
+        for c in self.clients:
+            if c.get('is_creditor'):
+                continue
+            for h in c.get('history', []):
+                if (str(h.get('date', '')).startswith('23.11.26') and 'roll_m' in h
+                        and safe_float(h.get('roll_m')) <= 0 and order_roll_color(h)):
+                    todo.append((str(h.get('date', '')), c, h))
+        todo.sort(key=lambda t: t[0])
+        for _, c, h in todo:
+            h.pop('roll_m', None)
+            consume_roll_for_order(self, c, h)
+        extra['roll_writeoff_2311c'] = True
 
     def migrate_profit_model(self):
         """Однократно: прибыль считается без минуса рулона. Чтобы цифры на экране не прыгнули,

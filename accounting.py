@@ -343,7 +343,7 @@ def printed_meters(app, color, since=None, roll_w=3.2):
             m = _SIZE_RE.search(str(h.get('desc', '')))
             if not m:
                 continue
-            days.setdefault(d[:8], []).append((m.group(1).replace(',', '.'), m.group(2).replace(',', '.'), m.group(3)))
+            days.setdefault((d[:8], id(c)), []).append((m.group(1).replace(',', '.'), m.group(2).replace(',', '.'), m.group(3)))
             count += 1
     total = sum(pack_length(p, roll_w) for p in days.values())
     return round(total, 2), count
@@ -393,8 +393,8 @@ def pick_roll(app, color):
 
 
 def consume_roll_for_order(app, client, item):
-    """Списать метры с рулона за заказ «Свой рулон». Заказы того же дня и цвета раскладываются
-    вместе: списывается прибавка к общей длине дня. Остаток может уйти в минус — до прихода рулона."""
+    """Списать метры с рулона за заказ (через исполнителя). Позиции одного клиента за день
+    раскладываются вместе: списывается прибавка к длине его заказа за день. Остаток может уйти в минус — до прихода рулона."""
     color = order_roll_color(item)
     size = parse_size(item.get('desc'))
     if color is None or size is None or client.get('is_creditor'):
@@ -403,9 +403,7 @@ def consume_roll_for_order(app, client, item):
     w = number(roll.get('width')) or 3.2
     day = str(item.get('date', ''))[:8]
     others = []
-    for c in app.clients:
-        if c.get('is_creditor'):
-            continue
+    for c in (client,):                  # раскладка — только внутри заказов этого клиента за день
         for h in c.get('history', []):
             # раскладка дня — только с заказами, которые уже списали метры (иначе сумма не сойдётся)
             if h is item or 'roll_m' not in h or order_roll_color(h) != color or str(h.get('date', ''))[:8] != day:
