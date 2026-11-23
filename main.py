@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.0"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.1"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -123,6 +123,29 @@ def _bordered_field(field, accent=(0.4, 0.8, 1, 1), height=118, width_frac=1.0):
     wrap.add_widget(box)
     wrap.add_widget(Widget(size_hint_x=sp))
     return wrap
+
+def _sign_field(field, accent=(0.45, 0.5, 0.6, 1), height=156):
+    """Поле суммы по центру и справа кнопка «±» — на клавиатуре телефона нет минуса."""
+    wrap = BoxLayout(orientation='horizontal', size_hint_y=None, height=height, spacing=10)
+    wrap.add_widget(Widget(size_hint_x=0.2))
+    box = _bordered_field(field, accent, height, 1.0)
+    box.size_hint_x = 0.6
+    wrap.add_widget(box)
+    holder = AnchorLayout(size_hint_x=0.2, anchor_x='left', anchor_y='center')
+    btn = RoundedButton(text="±", bg_color=(0.24, 0.30, 0.42, 1), size_hint=(1, 0.75),
+                        bold=True, radius=20, font_size='30sp')
+
+    def _flip(*a):
+        t = (field.text or '').strip().replace(' ', '').replace('\u00a0', '')
+        if t.startswith('-'):
+            field.text = t[1:] or '0'
+        elif t and safe_float(t) != 0:
+            field.text = '-' + t
+    btn.bind(on_release=_flip)
+    holder.add_widget(btn)
+    wrap.add_widget(holder)
+    return wrap
+
 
 # ── Оформление «Графит»: общая палитра (используется экранами по мере перевода) ──
 GR_BG = (0.110, 0.122, 0.141, 1)        # графитовый фон окна
@@ -1040,7 +1063,7 @@ class MainMenu(Screen):
                                  color=(0.55, 0.6, 0.66, 1), halign='center', valign='middle',
                                  size_hint_y=None, height=32))
         in_d = _dark_input(text=format_num_simple(c.get('debt', '0')), input_type='number', input_filter='float')
-        content.add_widget(_bordered_field(in_d, (0.45, 0.5, 0.6, 1), 156, 0.6))
+        content.add_widget(_sign_field(in_d, (0.45, 0.5, 0.6, 1), 156))
         btn_save = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1),
                                  bold=True, radius=24, font_size='21sp')
 
@@ -3122,6 +3145,9 @@ class ClientsScreen(Screen):
         btn_add = RoundedButton(text="+ ДОБАВИТЬ РУЛОН", bg_color=(0.15, 0.55, 0.9, 1),
                                 font_size='27sp', bold=True, radius=30, size_hint_y=None, height=188)
         btn_add.bind(on_release=lambda x: self._roll_edit_popup(None, pop))
+        btn_log = RoundedButton(text="ИСТОРИЯ СПИСАНИЙ", bg_color=GR_PANEL, border_color=GR_BORDER,
+                                font_size='18sp', bold=True, radius=GR_RADIUS, size_hint_y=None, height=_sp(46))
+        btn_log.bind(on_release=lambda x: self.show_rolls_log())
         # нижняя навигация — покрупнее, с воздухом между кнопками
         nav = BoxLayout(orientation='horizontal', spacing=16, size_hint_y=None, height=140, padding=[8, 0, 8, 0])
         btn_back = RoundedButton(text="НАЗАД", bg_color=(1, 0.45, 0, 1), font_size='24sp', bold=True, size_hint_x=0.45)
@@ -3131,9 +3157,58 @@ class ClientsScreen(Screen):
         nav.add_widget(btn_back)
         nav.add_widget(btn_close)
         pop.content.add_widget(scroll)
+        pop.content.add_widget(btn_log)
         pop.content.add_widget(btn_add)
         pop.content.add_widget(Widget(size_hint_y=None, height=22))
         pop.content.add_widget(nav)
+        pop.open()
+
+    def show_rolls_log(self):
+        """Все списания и правки остатков рулонов (белый / чёрный / плёнка), сверху последние."""
+        app = App.get_running_app()
+        if not app:
+            return
+        names = {'white': 'БЕЛЫЙ', 'black': 'ЧЁРНЫЙ', 'plenka': 'ПЛЁНКА'}
+        entries, seen = [], set()
+
+        def _key(e):
+            return (e.get('date'), e.get('kind'), round(safe_float(e.get('m')), 2), round(safe_float(e.get('left')), 2))
+        for e in (getattr(app, '_extra_data', None) or {}).get('roll_log', []) or []:
+            seen.add(_key(e)); entries.append(e)
+        for roll in app.rolls or []:       # записи с 12.11 (3.9), сделанные до общего журнала
+            for e in roll.get('log', []) or []:
+                if _key(e) not in seen:
+                    seen.add(_key(e)); entries.append(dict(e, color=roll.get('color', 'white'), width=roll.get('width')))
+
+        def _sort(e):
+            d = str(e.get('date', ''))
+            return (d[6:8], d[3:5], d[0:2], d[9:14]) if len(d) >= 14 else ('', '', '', '')
+        entries.sort(key=_sort)
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        pop = TopMenuPopup(title="ИСТОРИЯ СПИСАНИЙ", content=content, size_hint=(0.96, 0.92))
+        pop.background_color = GR_BG
+        content.add_widget(self._gr_auto_label(
+            "Когда и сколько метров списано или исправлено. Сверху — последние.\nЗаписи ведутся с 12.11.",
+            font='13sp', color=(0.62, 0.67, 0.74, 1)))
+        scroll = ScrollView()
+        grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
+        grid.bind(minimum_height=grid.setter('height'))
+        scroll.add_widget(grid)
+        content.add_widget(scroll)
+        if not entries:
+            grid.add_widget(self._gr_auto_label("[color=#7A8494]Пока нет записей — появятся после первого списания[/color]",
+                                                font='15sp'))
+        for e in reversed(entries):
+            kind = e.get('kind', '')
+            col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0'}.get(kind, '#5FD3FF')
+            sign = {'списано': '−', 'добавлено': '+'}.get(kind, '')
+            w = format_num_simple(e.get('width') or 0)
+            txt = (f"[color=#AAB4C8]{e.get('date', '')}[/color]   [b]{names.get(e.get('color'), 'РУЛОН')}[/b]"
+                   f"{(' ' + w + ' м') if safe_float(e.get('width')) else ''}\n"
+                   f"[b][color={col}]{kind} {sign}{format_num_simple(e.get('m', 0))} м[/color][/b]"
+                   f"   [color=#7F8A99]осталось {format_num_simple(e.get('left', 0))} м[/color]")
+            grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8))
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
     def _roll_edit_popup(self, ri, list_pop):
@@ -3220,12 +3295,25 @@ class ClientsScreen(Screen):
                             'm': abs(diff), 'left': round(rem_val, 2)})
             data['log'] = log[-100:]
             snap = snapshot(app)
+            # Общий журнал рулонов — не пропадёт, даже если рулон потом удалят
+            extra = getattr(app, '_extra_data', None)
+            if extra is None:
+                extra = app._extra_data = {}
+            g_log = extra.setdefault('roll_log', [])
+            g_added = False
+            if log and (is_new or abs(rem_val - old_rem) > 0.004):
+                g_log.append(dict(log[-1], color=state['color'], width=data['width']))
+                g_added = True
+                if len(g_log) > 1000:
+                    del g_log[:len(g_log) - 1000]
             if is_new:
                 app.rolls.append(data)
             else:
                 app.rolls[ri] = data
             ok, message = commit(app, snap, 'рулон')
             if not ok:
+                if g_added and g_log:
+                    g_log.pop()
                 pop.is_dismissing_flag = False
                 self._stub_popup('РУЛОН', message)
                 return
@@ -4887,7 +4975,7 @@ class ClientsScreen(Screen):
                                  color=(0.55, 0.6, 0.66, 1), halign='center', valign='middle',
                                  size_hint_y=None, height=34))
         in_d = _dark_input(text=str(c.get('debt', '0')), input_type='number', input_filter='float')
-        content.add_widget(_bordered_field(in_d, (0.45, 0.5, 0.6, 1), 156, 0.6))
+        content.add_widget(_sign_field(in_d, (0.45, 0.5, 0.6, 1), 156))
         btn = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1), height=116, size_hint_y=None,
                             bold=True, radius=24, font_size='22sp')
         pop = TopMenuPopup(title=c.get('name', '').upper(), content=scroll, size_hint=(0.94, 0.82))

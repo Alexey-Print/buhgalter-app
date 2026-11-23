@@ -130,8 +130,19 @@ class RollPaybackTests(unittest.TestCase):
             main.RoundedButton.__init__ = orig
         roll = self.app.rolls[0]
         self.assertEqual(roll['remain'], '22')
+        g = self.app._extra_data['roll_log'][-1]                 # общий журнал (4.1)
+        self.assertEqual((g['kind'], g['m'], g['color']), ('списано', 8, 'black'))
+        self.screen.show_rolls_log()
         self.assertEqual(roll['log'][-1]['kind'], 'списано')
         self.assertEqual(roll['log'][-1]['m'], 8)
+
+    def test_sign_field_flips(self):
+        from kivy.uix.textinput import TextInput
+        ti = TextInput(text='3500')
+        row = main._sign_field(ti)
+        btn = [w for w in row.walk() if isinstance(w, main.RoundedButton)][0]
+        btn.dispatch('on_release'); self.assertEqual(ti.text, '-3500')
+        btn.dispatch('on_release'); self.assertEqual(ti.text, '3500')
 
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
