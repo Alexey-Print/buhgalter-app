@@ -157,6 +157,10 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(roll_length(5.43, 2.5), 5.43)
         self.assertEqual(roll_length(3, 2, 2), 4)
         self.assertEqual(roll_length(4, 4), 5)
+        from accounting import pack_length                                  # 4.4: мелкие рядом с большим
+        self.assertEqual(pack_length([(5.13, 2.35, 1), (0.6, 0.85, 5)]), 5.13)
+        self.assertEqual(roll_length(0.6, 0.85, 5), 1.2)
+        self.assertEqual(roll_length(1, 1, 10), 4)
         idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
         for desc in ('5.43x2.5 x1шт', '3x2 x2шт'):
             self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_black', order_desc=desc))

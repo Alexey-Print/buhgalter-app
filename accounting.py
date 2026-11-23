@@ -261,38 +261,86 @@ def roll_length(a, b, qty=1, roll_w=3.2):
     return round(one * qty, 2)
 
 
+def pack_length(pieces, roll_w=3.2, max_pieces=400):
+    """Сколько метров рулона уйдёт на набор банеров [(a, b, штук), ...], если раскладывать их вместе:
+    сначала большие, мелкие — в свободные полосы рядом (как на бумаге), остальное — новыми рядами.
+    Простая жадная раскладка «гильотиной»: точнее, чем по одному, но не идеал."""
+    W, eps = float(roll_w) or 3.2, 1e-6
+    items = []
+    for a, b, q in pieces:
+        a, b = float(a), float(b)
+        if a <= 0 or b <= 0:
+            continue
+        items.extend([(min(a, b), max(a, b))] * max(1, int(q)))
+        if len(items) > max_pieces:
+            break
+    items.sort(key=lambda p: (p[0], p[1]), reverse=True)   # сначала широкие
+    strips = []    # свободные полосы: [ширина, длина]
+    total = 0.0
+    for lo, hi in items:
+        placed = False
+        for st in strips:
+            for across, along in ((hi, lo), (lo, hi)):
+                if across <= st[0] + eps and along <= st[1] + eps:
+                    st[1] -= along                       # заняли кусок полосы по длине
+                    if st[0] - across > eps:
+                        strips.append([st[0] - across, along])   # рядом с банером осталась полоска
+                    placed = True
+                    break
+            if placed:
+                break
+        if placed:
+            continue
+        if lo > W + eps:                                 # шире рулона — со швом, по площади
+            total += lo * hi / W
+            continue
+        across, along = (hi, lo) if hi <= W + eps else (lo, hi)
+        total += along
+        if W - across > eps:
+            strips.append([W - across, along])
+    return round(total, 2)
+
+
+def roll_length(a, b, qty=1, roll_w=3.2):
+    """Метры рулона на один вид банера (штуки раскладываются по несколько в ряд)."""
+    return pack_length([(a, b, qty)], roll_w)
+
+
 _SIZE_RE = None
 
 
 def printed_meters(app, color, since=None, roll_w=3.2):
     """Сколько метров напечатано своей печатью на банере цвета color ('white'/'black')
-    по заказам начиная с since (datetime или None — за всё время). → (метры, число заказов)."""
+    по заказам начиная с since (datetime или None — за всё время). Заказы одного дня
+    раскладываются вместе (мелкие встают рядом с большими). → (метры, число заказов)."""
     import re
     from datetime import datetime
     global _SIZE_RE
     if _SIZE_RE is None:
         _SIZE_RE = re.compile(r'([0-9]+(?:[.,][0-9]+)?)\s*[xх×]\s*([0-9]+(?:[.,][0-9]+)?)\s*x\s*([0-9]+)\s*шт')
     mode = 'banner_' + color
-    total, count = 0.0, 0
+    days, count = {}, 0
     for c in app.clients:
         for h in c.get('history', []) + c.get('archived_history', []):
             if h.get('mode') != mode or h.get('via_malevich'):
                 continue
+            d = str(h.get('date', ''))
             if since is not None:
                 try:
-                    if datetime.strptime(str(h.get('date', ''))[:14], '%d.%m.%y %H:%M') < since:
+                    if datetime.strptime(d[:14], '%d.%m.%y %H:%M') < since:
                         continue
                 except ValueError:
                     try:
-                        if datetime.strptime(str(h.get('date', ''))[:8], '%d.%m.%y') < since.replace(hour=0, minute=0):
+                        if datetime.strptime(d[:8], '%d.%m.%y') < since.replace(hour=0, minute=0):
                             continue
                     except ValueError:
                         continue
             m = _SIZE_RE.search(str(h.get('desc', '')))
             if not m:
                 continue
-            total += roll_length(m.group(1).replace(',', '.'), m.group(2).replace(',', '.'), m.group(3), roll_w)
+            days.setdefault(d[:8], []).append((m.group(1).replace(',', '.'), m.group(2).replace(',', '.'), m.group(3)))
             count += 1
+    total = sum(pack_length(p, roll_w) for p in days.values())
     return round(total, 2), count
 
 

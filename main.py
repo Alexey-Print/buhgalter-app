@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.3"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.4"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3205,7 +3205,7 @@ class ClientsScreen(Screen):
         pop = TopMenuPopup(title="ИСТОРИЯ СПИСАНИЙ", content=content, size_hint=(0.96, 0.92))
         pop.background_color = GR_BG
         content.add_widget(self._gr_auto_label(
-            "Списания, добавления и закупки рулонов.\nСверху — последние. Метры пишутся с 12.11.",
+            "Списания, добавления и закупки рулонов. Сверху — последние.\n«Напечатано»: заказы одного дня раскладываются вместе.",
             font='13sp', color=(0.62, 0.67, 0.74, 1)))
         scroll = ScrollView()
         grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
