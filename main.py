@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.6"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.7"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3329,7 +3329,10 @@ class ClientsScreen(Screen):
             col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0', 'удалён': '#FF8A80'}.get(kind, '#5FD3FF')
             sign = {'списано': '−', 'добавлено': '+'}.get(kind, '')
             who = (f"\n[color=#C8D2E0]{escape_markup(str(e.get('who')))}[/color]" if e.get('who') else '')
-            if e.get('note') == 'заказ':
+            if e.get('note') == 'рядом':
+                kind = 'встало рядом с другими, списано'
+                sign = ''
+            elif e.get('note') == 'заказ':
                 kind = 'по заказу списано'
             elif e.get('note') == 'отмена заказа':
                 kind = 'заказ отменён, вернули'

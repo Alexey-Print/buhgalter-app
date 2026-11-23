@@ -414,8 +414,11 @@ def consume_roll_for_order(app, client, item):
             if sz:
                 others.append(sz)
     delta = round(max(0.0, pack_length(others + [size], w) - pack_length(others, w)), 2)
-    if delta <= 0:
+    if delta <= 0:                      # встало рядом с другими заказами дня — лишней длины нет
         item['roll_m'], item['roll_rid'] = 0.0, roll['rid']
+        add_roll_log(app, {'kind': 'списано', 'm': 0.0, 'left': round(number(roll.get('remain')), 2), 'color': color,
+                           'width': roll.get('width'), 'note': 'рядом',
+                           'who': f"{client.get('name', '')}: {str(item.get('desc', '')).strip()}"})
         return 0.0
     left = round(number(roll.get('remain')) - delta, 2)
     roll['remain'] = money(left)

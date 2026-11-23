@@ -253,6 +253,20 @@ class RollPaybackTests(unittest.TestCase):
         app2.load_data()
         self.assertEqual({r['color']: r['remain'] for r in app2.rolls}, rem)   # второй раз не списывает
 
+    def test_zero_writeoff_is_logged(self):
+        self.app.rolls = [{'color': 'white', 'width': '3.2', 'total': '50', 'remain': '18'}]
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
+        main.ensure_ids(self.app.clients)
+        oleg = len(self.app.clients) - 1
+        for d in ('5.13x2.35 x1шт', '0.85x0.6 x5шт'):
+            self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_white', order_desc=d,
+                                                    via_malevich=True, creditor_idx=oleg))
+        self.assertEqual(self.app.rolls[0]['remain'], '12.77')          # мелкие встали рядом с большим
+        last = self.app._extra_data['roll_log'][-1]
+        self.assertEqual((last['m'], last['note']), (0.0, 'рядом'))
+        self.screen.show_rolls_log()
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()
