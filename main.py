@@ -3198,6 +3198,15 @@ class ClientsScreen(Screen):
         if not entries:
             grid.add_widget(self._gr_auto_label("[color=#7A8494]Пока нет записей — появятся после первого списания[/color]",
                                                 font='15sp'))
+        def _was(e):
+            left, m = safe_float(e.get('left')), safe_float(e.get('m'))
+            k = e.get('kind')
+            if k == 'списано':
+                return f"было {format_num_simple(round(left + m, 2))} м, "
+            if k == 'добавлено':
+                return f"было {format_num_simple(round(left - m, 2))} м, "
+            return ''
+
         for e in reversed(entries):
             kind = e.get('kind', '')
             col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0'}.get(kind, '#5FD3FF')
@@ -3205,8 +3214,8 @@ class ClientsScreen(Screen):
             w = format_num_simple(e.get('width') or 0)
             txt = (f"[color=#AAB4C8]{e.get('date', '')}[/color]   [b]{names.get(e.get('color'), 'РУЛОН')}[/b]"
                    f"{(' ' + w + ' м') if safe_float(e.get('width')) else ''}\n"
-                   f"[b][color={col}]{kind} {sign}{format_num_simple(e.get('m', 0))} м[/color][/b]"
-                   f"   [color=#7F8A99]осталось {format_num_simple(e.get('left', 0))} м[/color]")
+                   f"[b][color={col}]{kind} {sign}{format_num_simple(e.get('m', 0))} м[/color][/b]\n"
+                   f"[color=#7F8A99]{_was(e)}осталось {format_num_simple(e.get('left', 0))} м[/color]")
             grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8))
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
@@ -3334,8 +3343,11 @@ class ClientsScreen(Screen):
                 for e in reversed(_log[-6:]):
                     sign = {'списано': '−', 'добавлено': '+'}.get(e.get('kind'), '')
                     col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0'}.get(e.get('kind'), '#AAB4C8')
+                    _m, _l = safe_float(e.get('m')), safe_float(e.get('left'))
+                    _b = {'списано': _l + _m, 'добавлено': _l - _m}.get(e.get('kind'))
+                    _bt = f"было {format_num_simple(round(_b, 2))} → " if _b is not None else ""
                     _lines.append(f"{e.get('date', '')}  [color={col}]{e.get('kind', '')} {sign}{format_num_simple(e.get('m', 0))} м[/color]"
-                                  f"  [color=#7F8A99]ост. {format_num_simple(e.get('left', 0))}[/color]")
+                                  f"  [color=#7F8A99]{_bt.replace(' → ', ', ')}ост. {format_num_simple(e.get('left', 0))}[/color]")
                 _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n" + "\n".join(_lines)
             else:
                 _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n[color=#7F8A99]пока пусто — появится после первого списания[/color]"
