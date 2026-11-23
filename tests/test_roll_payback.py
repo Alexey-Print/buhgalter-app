@@ -289,6 +289,39 @@ class RollPaybackTests(unittest.TestCase):
         app.load_data()
         self.assertEqual(app.rolls[0]['remain'], '5.27')                 # 6.67 − 1.4
 
+    def test_payback_via_executor_uses_margin(self):
+        self.assertTrue(purchase_banner(self.app, 'black', 6000)[0])
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
+        main.ensure_ids(self.app.clients)
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_black', print_cost=550,
+                                                via_malevich=True, creditor_idx=len(self.app.clients) - 1,
+                                                order_desc='1x1 x1шт'))
+        self.assertEqual(self.black()['debt'], '5 550')      # в рулон — только 450, что остаётся мне
+        self.assertEqual(self.profit(), 0)                   # прибыль стоит, в минус не уходит
+
+    def test_roll_window_paid_goes_to_minus(self):
+        made = []
+        orig = main.RoundedButton.__init__
+
+        def rec(btn, **kw):
+            orig(btn, **kw); made.append(btn)
+        main.RoundedButton.__init__ = rec
+        try:
+            self.app.rolls = [{'color': 'black', 'width': '3.2', 'total': '50', 'remain': '-5'}]
+            self.screen._roll_edit_popup(0, None)
+            from kivy.uix.textinput import TextInput
+            save = [b for b in made if b.text == 'СОХРАНИТЬ'][-1]
+            [b for b in made if b.text == '+75 м'][-1].dispatch('on_release')
+            pay = [w for w in save.parent.walk() if isinstance(w, TextInput) and w.hint_text == '0'][0]
+            pay.text = '13000'
+            save.dispatch('on_release')
+        finally:
+            main.RoundedButton.__init__ = orig
+        self.assertEqual(self.app.rolls[0]['remain'], '70')
+        self.assertEqual(self.black()['debt'], '13 000')
+        self.assertEqual(self.profit(), 0)
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()

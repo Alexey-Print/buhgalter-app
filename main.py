@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.7"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.8"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3431,6 +3431,17 @@ class ClientsScreen(Screen):
             add_row.add_widget(b)
         content.add_widget(add_row)
 
+        # Сколько заплатил за рулон — уходит в минус рулона (как «ЗАКУПКА»), окупается заказами
+        pay_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=_sp(46))
+        pay_row.add_widget(Label(text="[b]ЗАПЛАТИЛ\nЗА РУЛОН, руб:[/b]", markup=True, font_size='14sp', halign='center',
+                                 color=(1.0, 0.72, 0.3, 1), size_hint_x=0.4))
+        in_pay = _dark_input(hint_text="0", input_type='number', input_filter='float')
+        in_pay.font_size = '20sp'
+        pay_row.height = _sp(54)
+        pay_row.add_widget(_bordered_field(in_pay, (1.0, 0.72, 0.3, 1), _sp(54), 1.0))
+        pay_row.children[0].size_hint_x = 0.6
+        content.add_widget(pay_row)
+
         def do_save(x):
             if getattr(pop, 'is_dismissing_flag', False):
                 return
@@ -3480,7 +3491,15 @@ class ClientsScreen(Screen):
                 app.rolls.append(data)
             else:
                 app.rolls[ri] = data
-            ok, message = commit(app, snap, 'рулон')
+            paid = safe_float(in_pay.text)
+            if paid > 0:
+                _, _, _bw, _bb = app.get_special_clients()
+                _card_i = {'white': _bw, 'black': _bb, 'plenka': app.plenka_index()}.get(state['color'])
+                if _card_i is not None:
+                    _card = app.clients[_card_i]
+                    _card['debt'] = format_num_simple(round(safe_float(_card.get('debt', 0)) + paid, 2))
+            ok, message = commit(app, snap, ('закупка плёнки' if state['color'] == 'plenka' else 'закупка банера')
+                                 if paid > 0 else 'рулон')
             if not ok:
                 if g_added:
                     del g_log[-g_added:]
@@ -4538,7 +4557,8 @@ class ClientsScreen(Screen):
             if is_banner_order and val > 0:
                 primary_idx = b_idx if "banner_white" in mode else black_idx
                 secondary_idx = black_idx if "banner_white" in mode else b_idx
-                remaining = val
+                # рулон окупается из того, что остаётся мне после оплаты исполнителю
+                remaining = max(0.0, val - safe_float(print_cost))
                 total_deducted = 0.0
                 # 1) гасим свой цвет
                 if primary_idx is not None:
