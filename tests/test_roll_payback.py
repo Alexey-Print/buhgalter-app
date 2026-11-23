@@ -345,6 +345,53 @@ class RollPaybackTests(unittest.TestCase):
         white = self.app.clients[self.app.get_special_clients()[2]]
         self.assertEqual(white['debt'], '12 000')
 
+    def test_payer_oleg_adds_to_my_debt(self):
+        made = []
+        orig = main.RoundedButton.__init__
+
+        def rec(btn, **kw):
+            orig(btn, **kw); made.append(btn)
+        main.RoundedButton.__init__ = rec
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '6665', 'is_creditor': True, 'history': []})
+        main.ensure_ids(self.app.clients)
+        oleg = self.app.clients[-1]
+        try:
+            self.app.rolls = [{'color': 'black', 'width': '3.2', 'total': '50', 'remain': '-18.2'}]
+            self.screen._open_purchase_roll('black')
+            from kivy.uix.textinput import TextInput
+            save = [b for b in made if b.text == 'СОХРАНИТЬ'][-1]
+            [b for b in made if b.text == '+50 м'][-1].dispatch('on_release')
+            [b for b in made if b.text == 'ОЛЕГ'][-1].dispatch('on_release')
+            pay = [w for w in save.parent.walk() if isinstance(w, TextInput) and w.hint_text == '0'][0]
+            pay.text = '11760'
+            save.dispatch('on_release')
+        finally:
+            main.RoundedButton.__init__ = orig
+        self.assertEqual(oleg['debt'], '18 425')                       # мой долг Олегу вырос
+        self.assertEqual(self.black()['debt'], '11 760')               # рулон окупается
+        self.assertEqual(self.app.rolls[0]['remain'], '31.8')
+        self.assertEqual(self.profit(), 0)
+        self.assertTrue(any('заплатил ОЛЕГ' in str(j.get('op')) for j in self.app.journal))
+
+    def test_migration_oleg_black_2311(self):
+        import json
+        data = {'clients': [
+            {'name': 'ЧЕРНЫЙ БАНЕР', 'debt': '11760', 'role': 'black', 'cid': 'b'},
+            {'name': 'МАЛЕВИЧ', 'debt': '0', 'cid': 'mk', 'is_creditor': True},
+            {'name': 'ОЛЕГ', 'debt': '6665', 'cid': 'o', 'is_creditor': True}],
+            'profit_correction': '0', 'roles_version': 1, 'profit_model': 2,
+            'roll_writeoff_2311b': True, 'roll_writeoff_2311c': True,
+            'journal': [{'t': '2026-11-23 19:50:00', 'op': 'закупка банера', 'cid': 'b', 'name': 'ЧЕРНЫЙ БАНЕР',
+                         'was': '0', 'now': '11760'}]}
+        with open(main.DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False)
+        for _ in range(2):                                              # второй запуск не прибавляет снова
+            app = main.BusinessApp(); main.App._running_app = app
+            app.load_data()
+            oleg = next(c for c in app.clients if c.get('name') == 'ОЛЕГ')
+            self.assertEqual(oleg['debt'], '18 425')
+        self.assertTrue(any('ОЛЕГ' in str(j.get('op')) and j.get('cid') == 'o' for j in app.journal))
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()

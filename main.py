@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.9"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.10"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3451,6 +3451,30 @@ class ClientsScreen(Screen):
         pay_row.children[0].size_hint_x = 0.6
         content.add_widget(pay_row)
 
+        # Кто заплатил за рулон: я сам или исполнитель (Олег купил — значит, я ему должен)
+        payers = [(None, "Я САМ")] + [(i, str(c.get('name', ''))) for i, c in enumerate(app.clients) if c.get('is_creditor')]
+        state['payer'] = None
+        who_row = BoxLayout(orientation='horizontal', spacing=8, size_hint_y=None, height=_sp(42))
+        _who_lbl = Label(text="[b]КТО\nПЛАТИЛ:[/b]", markup=True, font_size='13sp', halign='center', valign='middle',
+                         color=(1.0, 0.72, 0.3, 1), size_hint_x=0.22)
+        _who_lbl.bind(size=lambda w, v: setattr(w, 'text_size', v))
+        who_row.add_widget(_who_lbl)
+        payer_btns = []
+
+        def paint_payers():
+            for pi, b in payer_btns:
+                on = (pi == state['payer'])
+                b.bg_color = [0.95, 0.6, 0.15, 1] if on else [0.2, 0.23, 0.3, 1]
+                b.border_color = [1, 1, 1, 1] if on else [0, 0, 0, 0]
+        for pi, nm in payers[:4]:
+            b = RoundedButton(text=nm, font_size='12sp', bold=True, radius=GR_RADIUS, shorten=True,
+                              size_hint_x=0.78 / len(payers[:4]))
+            b.bind(on_release=lambda x, v=pi: (state.update(payer=v), paint_payers()))
+            payer_btns.append((pi, b))
+            who_row.add_widget(b)
+        paint_payers()
+        content.add_widget(who_row)
+
         def do_save(x):
             if getattr(pop, 'is_dismissing_flag', False):
                 return
@@ -3507,8 +3531,13 @@ class ClientsScreen(Screen):
                 if _card_i is not None:
                     _card = app.clients[_card_i]
                     _card['debt'] = format_num_simple(round(safe_float(_card.get('debt', 0)) + paid, 2))
-            ok, message = commit(app, snap, ('закупка плёнки' if state['color'] == 'plenka' else 'закупка банера')
-                                 if paid > 0 else 'рулон')
+                if state.get('payer') is not None:            # купил исполнитель — мой долг ему растёт
+                    _cr = app.clients[state['payer']]
+                    _cr['debt'] = format_num_simple(round(safe_float(_cr.get('debt', 0)) + paid, 2))
+            _what = 'закупка плёнки' if state['color'] == 'plenka' else 'закупка банера'
+            if paid > 0 and state.get('payer') is not None:
+                _what += f": заплатил {app.clients[state['payer']].get('name', '')}"
+            ok, message = commit(app, snap, _what if paid > 0 else 'рулон')
             if not ok:
                 if g_added:
                     del g_log[-g_added:]
@@ -3540,10 +3569,14 @@ class ClientsScreen(Screen):
                 _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n" + "\n".join(_lines)
             else:
                 _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n[color=#7F8A99]пока пусто — появится после первого списания[/color]"
-            content.add_widget(self._gr_auto_label(_txt, font='13sp', color=GR_TEXT, halign='left'))
+            _hist_lbl = self._gr_auto_label(_txt, font='13sp', color=GR_TEXT, halign='left')
+        else:
+            _hist_lbl = None
         for f in (in_w, in_use, in_tot, in_rem):   # клавиша ↵ на клавиатуре = СОХРАНИТЬ
             f.bind(on_text_validate=do_save)
         content.add_widget(btn_save)
+        if _hist_lbl is not None:                   # история — под «СОХРАНИТЬ», чтобы кнопка была над клавиатурой
+            content.add_widget(_hist_lbl)
 
         row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=100)
         btn_back = RoundedButton(text="НАЗАД", bg_color=(1, 0.45, 0, 1), bold=True, radius=22, font_size='20sp', size_hint_x=0.45)
@@ -5626,6 +5659,7 @@ class BusinessApp(App):
         if getattr(self, 'journal', None) is None:
             self.journal = []
         self._journal_base = journal_balances(self)
+        self.migrate_oleg_black_2311()          # после основы журнала — чтобы +11 760 Олегу попало в журнал
         self._migrate_rolls_if_needed()
         self.save_data()
 
@@ -5648,6 +5682,29 @@ class BusinessApp(App):
         for _, c, h in todo:
             consume_roll_for_order(self, c, h)
         extra['roll_writeoff_2311b'] = True
+
+    def migrate_oleg_black_2311(self):
+        """Однократно (4.10): закупку чёрного 23.11.26 на 11 760 оплатил Олег — прибавить к моему долгу ему
+        (просьба Алексея). Только если такая закупка есть в журнале."""
+        extra = getattr(self, '_extra_data', None)
+        if extra is None:
+            extra = self._extra_data = {}
+        if extra.get('oleg_black_2311'):
+            return
+        _, _, _, bb = self.get_special_clients()
+        oleg = next((c for c in self.clients if c.get('is_creditor')
+                     and str(c.get('name', '')).strip().upper() == 'ОЛЕГ'), None)
+        if bb is None or oleg is None:
+            return
+        cid = self.clients[bb].get('cid')
+        found = any(j.get('cid') == cid and str(j.get('op', '')).startswith('закупка')
+                    and str(j.get('t', '')).startswith('2026-11-23')
+                    and abs(safe_float(j.get('now')) - safe_float(j.get('was')) - 11760) < 0.5
+                    for j in getattr(self, 'journal', None) or [])
+        if found:
+            oleg['debt'] = format_num_simple(round(safe_float(oleg.get('debt', 0)) + 11760, 2))
+            self._op = 'закупка банера: заплатил ОЛЕГ (чёрный 23.11)'
+        extra['oleg_black_2311'] = True
 
     def migrate_roll_writeoff_per_client(self):
         """Однократно (4.7): раскладка теперь внутри одного клиента. Заказы за 23.11.26, которые в 4.6
