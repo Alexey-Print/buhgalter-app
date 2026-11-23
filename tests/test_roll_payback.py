@@ -162,8 +162,12 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(roll_length(0.6, 0.85, 5), 1.4)
         self.assertEqual(roll_length(1, 1, 10), 5.5)
         idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
+        main.ensure_ids(self.app.clients)
+        oleg = len(self.app.clients) - 1
         for desc in ('5.43x2.5 x1шт', '3x2 x2шт'):
-            self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_black', order_desc=desc))
+            self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_black', order_desc=desc,
+                                                    via_malevich=True, creditor_idx=oleg))
         self.screen._final_save(idx, '500 руб', None, 'banner_white', order_desc='1x1 x1шт')
         self.assertEqual(printed_meters(self.app, 'black'), (9.73, 2))
         self.assertEqual(printed_meters(self.app, 'black', datetime.now() + timedelta(hours=1)), (0, 0))
@@ -190,6 +194,16 @@ class RollPaybackTests(unittest.TestCase):
         from accounting import purchase_banner as pb
         self.app.rolls = [{'color': 'black', 'width': '3.2', 'total': '50', 'remain': '13.5'}]
         idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
+        main.ensure_ids(self.app.clients)
+        oleg = len(self.app.clients) - 1
+        own = self.screen._final_save
+        self.assertTrue(own(idx, '1 000 руб', None, 'banner_black', order_desc='4x3 x1шт'))   # «Свой рулон»
+        self.assertEqual(self.app.rolls[0]['remain'], '13.5')                                 # — метры не трогает
+
+        def via(i, t, b, mode, order_desc=None, via_malevich=True):
+            return own(i, t, b, mode, order_desc=order_desc, via_malevich=via_malevich, creditor_idx=oleg if via_malevich else None)
+        self.screen._final_save = via
         self.assertTrue(self.screen._final_save(idx, '5 400 руб', None, 'banner_black', order_desc='4.5x3 x2шт'))
         first = self.sasha['history'][-1]
         self.assertEqual(first['roll_m'], 9.2)                      # 2 × (4.5+0.1), ширина 3.1 влезает
@@ -203,10 +217,10 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.app.rolls[0]['remain'], '44')
         self.assertTrue(reverse_order(self.app, self.sasha, first)[0])
         self.assertEqual(self.app.rolls[0]['remain'], '53.2')        # отмена заказа вернула метры
-        self.assertTrue(self.screen._final_save(idx, '500 руб', None, 'banner_white', order_desc='1x1 x1шт',
-                                                via_malevich=False))
+        self.assertTrue(self.screen._final_save(idx, '500 руб', None, 'banner_white', order_desc='1x1 x1шт'))
         self.assertEqual([r['color'] for r in self.app.rolls], ['black', 'white'])   # белого не было — заведён
         self.assertEqual(self.app.rolls[1]['remain'], '-1.1')
+        self.screen._final_save = own
         self.assertEqual(main.check_integrity(self.app), [])
         self.screen.show_rolls_log()
         self.screen.show_rolls_inventory()
@@ -215,11 +229,11 @@ class RollPaybackTests(unittest.TestCase):
         import json
         data = {'clients': [
             {'name': 'САША', 'debt': '20000', 'cid': 's', 'history': [
-                {'oid': 'a', 'date': '23.11.26 12:10', 'desc': '6x3 x3шт', 'sum': '10800', 'mode': 'banner_black'},
-                {'oid': 'b', 'date': '23.11.26 12:11', 'desc': '4.5x3 x2шт', 'sum': '5400', 'mode': 'banner_black'},
-                {'oid': 'c', 'date': '23.11.26 12:12', 'desc': '2.6x4.1 x1шт', 'sum': '2132', 'mode': 'banner_black'},
-                {'oid': 'd', 'date': '22.11.26 12:12', 'desc': '1x1 x1шт', 'sum': '200', 'mode': 'banner_black'},
-                {'oid': 'e', 'date': '23.11.26 12:13', 'desc': '3x6 x1шт', 'sum': '2700', 'mode': 'banner_white'}]},
+                {'oid': 'a', 'date': '23.11.26 12:10', 'desc': '6x3 x3шт', 'sum': '10800', 'mode': 'banner_black', 'via_malevich': True, 'creditor_id': 'o', 'creditor_name': 'ОЛЕГ', 'print_cost': 0},
+                {'oid': 'b', 'date': '23.11.26 12:11', 'desc': '4.5x3 x2шт', 'sum': '5400', 'mode': 'banner_black', 'via_malevich': True, 'creditor_id': 'o', 'creditor_name': 'ОЛЕГ', 'print_cost': 0},
+                {'oid': 'c', 'date': '23.11.26 12:12', 'desc': '2.6x4.1 x1шт', 'sum': '2132', 'mode': 'banner_black', 'via_malevich': True, 'creditor_id': 'o', 'creditor_name': 'ОЛЕГ', 'print_cost': 0},
+                {'oid': 'd', 'date': '22.11.26 12:12', 'desc': '1x1 x1шт', 'sum': '200', 'mode': 'banner_black', 'via_malevich': True, 'creditor_id': 'o', 'creditor_name': 'ОЛЕГ', 'print_cost': 0},
+                {'oid': 'e', 'date': '23.11.26 12:13', 'desc': '3x6 x1шт', 'sum': '2700', 'mode': 'banner_white', 'via_malevich': True, 'creditor_id': 'o', 'creditor_name': 'ОЛЕГ', 'print_cost': 0}]},
             {'name': 'МАЛЕВИЧ', 'debt': '1808', 'cid': 'm', 'history': [
                 {'oid': 'f', 'date': '23.11.26 13:30', 'desc': '5.13x2.35 x1шт', 'sum': '1808', 'mode': 'banner_white',
                  'via_malevich': True, 'creditor_name': 'ОЛЕГ', 'creditor_id': 'o', 'print_cost': 0}]},

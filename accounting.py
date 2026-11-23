@@ -327,7 +327,7 @@ def printed_meters(app, color, since=None, roll_w=3.2):
     days, count = {}, 0
     for c in app.clients:
         for h in c.get('history', []) + c.get('archived_history', []):
-            if h.get('mode') != mode or h.get('source_oid'):
+            if h.get('mode') != mode or h.get('source_oid') or not h.get('via_malevich'):
                 continue
             d = str(h.get('date', ''))
             if since is not None:
@@ -350,9 +350,10 @@ def printed_meters(app, color, since=None, roll_w=3.2):
 
 
 def order_roll_color(h):
-    """С какого рулона заказ: 'white' / 'black' / 'plenka' или None (такси, доп, материал клиента).
-    Банер через исполнителя тоже считается: купленные рулоны лежат у Олега, он печатает на них."""
-    if h.get('source_oid'):
+    """С какого рулона списывать метры: 'white' / 'black' или None.
+    Только банер через исполнителя — купленные рулоны лежат у Олега, он печатает на них.
+    «Свой рулон» (печатаю сам) метры не списывает — там считаются только деньги."""
+    if h.get('source_oid') or not h.get('via_malevich'):
         return None
     m = str(h.get('mode', ''))
     if m == 'banner_white':
