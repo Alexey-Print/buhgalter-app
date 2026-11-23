@@ -81,6 +81,9 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.profit(), 500)
         self.assertEqual(self.app.profit_log[-1]['to_roll'], 500)
         self.assertEqual(self.app.rolls[-1]['color'], 'plenka')   # рулон плёнки в остатках
+        g = self.app._extra_data['roll_log'][-1]                          # закупка попала в историю (4.2)
+        self.assertEqual((g['kind'], g['note'], g['m'], g['color']), ('новый', 'закупка', 50, 'plenka'))
+        self.screen.show_rolls_log()
         self.assertEqual(self.app.get_totals()[0], 2500)  # «ПЛЁНКА» не считается долгом клиента
         self.assertTrue(reverse_order(self.app, self.sasha, first)[0])
         self.assertEqual(self.plenka()['debt'], '1 500')

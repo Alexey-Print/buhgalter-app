@@ -6,7 +6,7 @@ import time
 import math
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result
+from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log
 from datetime import datetime
 import transfer
 from collections import defaultdict
@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.1"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.2"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3180,6 +3180,23 @@ class ClientsScreen(Screen):
                 if _key(e) not in seen:
                     seen.add(_key(e)); entries.append(dict(e, color=roll.get('color', 'white'), width=roll.get('width')))
 
+        # Старые закупки из журнала долгов: дата и сумма есть, метры не записывались
+        _, _, b_idx, c_idx = app.get_special_clients()
+        card_color = {}
+        for i, col_ in ((b_idx, 'white'), (c_idx, 'black'), (app.plenka_index(), 'plenka')):
+            if i is not None:
+                card_color[app.clients[i].get('cid')] = col_
+        bought = {(e.get('color'), str(e.get('date', ''))[:14]) for e in entries if e.get('note') == 'закупка'}
+        for j in getattr(app, 'journal', None) or []:
+            if j.get('cid') in card_color and str(j.get('op', '')).startswith('закупка'):
+                t = str(j.get('t', ''))
+                d = f"{t[8:10]}.{t[5:7]}.{t[2:4]} {t[11:16]}" if len(t) >= 16 else t
+                col_ = card_color[j['cid']]
+                if (col_, d) in bought:
+                    continue
+                amt = safe_float(j.get('now')) - safe_float(j.get('was'))
+                entries.append({'date': d, 'kind': 'закупка', 'color': col_, 'money': amt})
+
         def _sort(e):
             d = str(e.get('date', ''))
             return (d[6:8], d[3:5], d[0:2], d[9:14]) if len(d) >= 14 else ('', '', '', '')
@@ -3188,7 +3205,7 @@ class ClientsScreen(Screen):
         pop = TopMenuPopup(title="ИСТОРИЯ СПИСАНИЙ", content=content, size_hint=(0.96, 0.92))
         pop.background_color = GR_BG
         content.add_widget(self._gr_auto_label(
-            "Когда и сколько метров списано или исправлено. Сверху — последние.\nЗаписи ведутся с 12.11.",
+            "Списания, добавления и закупки рулонов.\nСверху — последние. Метры пишутся с 12.11.",
             font='13sp', color=(0.62, 0.67, 0.74, 1)))
         scroll = ScrollView()
         grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
@@ -3205,12 +3222,24 @@ class ClientsScreen(Screen):
                 return f"было {format_num_simple(round(left + m, 2))} м, "
             if k == 'добавлено':
                 return f"было {format_num_simple(round(left - m, 2))} м, "
+            if k == 'удалён':
+                return ''
             return ''
 
         for e in reversed(entries):
             kind = e.get('kind', '')
-            col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0'}.get(kind, '#5FD3FF')
+            col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0', 'удалён': '#FF8A80'}.get(kind, '#5FD3FF')
             sign = {'списано': '−', 'добавлено': '+'}.get(kind, '')
+            if kind == 'закупка' and 'money' in e:
+                txt = (f"[color=#AAB4C8]{e.get('date', '')}[/color]   [b]{names.get(e.get('color'), 'РУЛОН')}[/b]\n"
+                       f"[b][color=#5FD3FF]закупка на {rub(e['money'])} р[/color][/b]\n"
+                       f"[color=#AAB4C8]метры тогда не записывались[/color]")
+                grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='15sp', color=GR_TEXT, halign='left')], pad=8))
+                continue
+            if kind == 'новый' and e.get('note') == 'закупка':
+                kind = 'закупка, новый'
+            if kind == 'удалён':
+                kind = 'рулон удалён, было'
             w = format_num_simple(e.get('width') or 0)
             txt = (f"[color=#AAB4C8]{e.get('date', '')}[/color]   [b]{names.get(e.get('color'), 'РУЛОН')}[/b]"
                    f"{(' ' + w + ' м') if safe_float(e.get('width')) else ''}\n"
@@ -3392,11 +3421,16 @@ class ClientsScreen(Screen):
                     return
                 pop.is_dismissing_flag = True
                 snap = snapshot(app)
+                n_log = len((getattr(app, '_extra_data', None) or {}).get('roll_log', []) or [])
                 try:
-                    app.rolls.pop(ri)
+                    gone = app.rolls.pop(ri)
+                    add_roll_log(app, {'kind': 'удалён', 'm': round(safe_float(gone.get('remain')), 2), 'left': 0,
+                                       'color': gone.get('color', 'white'), 'width': gone.get('width')})
                 except Exception:
                     pass
-                ok, message = commit(app, snap)
+                ok, message = commit(app, snap, 'рулон удалён')
+                if not ok:
+                    del app._extra_data['roll_log'][n_log:]
                 if not ok:
                     pop.is_dismissing_flag = False
                     self._stub_popup('РУЛОН', message)

@@ -247,6 +247,18 @@ def creditor_is_referenced(app, creditor):
         any(h.get('source_oid') for h in creditor.get('history', []) + creditor.get('archived_history', []))
 
 
+def add_roll_log(app, entry):
+    """Запись в общий журнал рулонов (_extra_data['roll_log']); дата ставится здесь."""
+    from datetime import datetime
+    extra = getattr(app, '_extra_data', None)
+    if extra is None:
+        extra = app._extra_data = {}
+    log = extra.setdefault('roll_log', [])
+    log.append(dict(entry, date=datetime.now().strftime('%d.%m.%y %H:%M')))
+    if len(log) > 1000:
+        del log[:len(log) - 1000]
+
+
 def purchase_banner(app, color, amount, width='', length=0):
     amount = number(amount)
     length = number(length)
@@ -267,6 +279,8 @@ def purchase_banner(app, color, amount, width='', length=0):
         client.setdefault('purchase_log', []).append({'date': datetime.now().strftime('%d.%m.%y %H:%M'), 'sum': money(amount)})
         if length > 0:
             app.rolls.append({'color': color, 'width': str(width).strip() or '0', 'total': money(length), 'remain': money(length)})
+            add_roll_log(app, {'kind': 'новый', 'm': round(length, 2), 'left': round(length, 2),
+                               'color': color, 'width': str(width).strip() or '0', 'note': 'закупка'})
         app._op = 'закупка плёнки' if color == 'plenka' else 'закупка банера'
         if app.save_data() is not True:
             raise OSError('Сохранение не подтверждено')
