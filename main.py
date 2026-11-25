@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.19"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.20"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3927,19 +3927,36 @@ class ClientsScreen(Screen):
 
         btn_save = RoundedButton(text="СОХРАНИТЬ", bg_color=(0.2, 0.62, 0.42, 1), bold=True, radius=22, font_size='21sp', size_hint_y=None, height=104)
         btn_save.bind(on_release=do_save)
-        _log = list(roll.get('log', []) or [])
+        # своя история рулона + списания за заказы из общего журнала (тот же цвет), без повторов, по дате
+        _log, _seen = [], set()
+        _g = ((getattr(app, '_extra_data', None) or {}).get('roll_log') or [])
+        for e in list(roll.get('log', []) or []) + [g for g in _g if g.get('color', 'white') == roll.get('color', 'white')
+                                                     and g.get('kind') in ('списано', 'добавлено')]:
+            _k = (str(e.get('date', ''))[:14], e.get('kind'), round(safe_float(e.get('m')), 2),
+                  round(safe_float(e.get('left')), 2))
+            if _k in _seen:
+                continue
+            _seen.add(_k)
+            _log.append(e)
+
+        def _dkey(e):
+            d = str(e.get('date', ''))
+            return (d[6:8], d[3:5], d[0:2], d[9:14]) if len(d) >= 14 else ('', '', '', '')
+        _log.sort(key=_dkey)
         if not is_new:
             if _log:
                 _lines = []
-                for e in reversed(_log[-6:]):
+                for e in reversed(_log[-8:]):
                     sign = {'списано': '−', 'добавлено': '+'}.get(e.get('kind'), '')
                     col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0'}.get(e.get('kind'), '#AAB4C8')
                     _m, _l = safe_float(e.get('m')), safe_float(e.get('left'))
                     _b = {'списано': _l + _m, 'добавлено': _l - _m}.get(e.get('kind'))
                     _bt = f"было {format_num_simple(round(_b, 2))} → " if _b is not None else ""
-                    _lines.append(f"{e.get('date', '')}  [color={col}]{e.get('kind', '')} {sign}{format_num_simple(e.get('m', 0))} м[/color]"
-                                  f"  [b][color=#E3E9F2]{_bt.replace(' → ', ', ')}ост. {format_num_simple(e.get('left', 0))}[/color][/b]")
-                _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n" + "\n".join(_lines)
+                    _who = escape_markup(str(e.get('who', '') or '').strip())
+                    _lines.append(f"{str(e.get('date', ''))[:8]}  [color={col}]{e.get('kind', '')} {sign}{format_num_simple(e.get('m', 0))} м[/color]"
+                                  f"  [b][color=#E3E9F2]{_bt.replace('было ', '').replace(' → ', ' » ')}{format_num_simple(e.get('left', 0))}[/color][/b]"
+                                  + (f"\n   [color=#AAB4C8]{_who}[/color]" if _who else ""))
+                _txt = "[b]ИСТОРИЯ[/b]  [color=#7F8A99](было » осталось, м)[/color]\n" + "\n".join(_lines)
             else:
                 _txt = "[b]ИСТОРИЯ СПИСАНИЙ[/b]\n[color=#7F8A99]пока пусто — появится после первого списания[/color]"
             _hist_lbl = self._gr_auto_label(_txt, font='13sp', color=GR_TEXT, halign='left')
