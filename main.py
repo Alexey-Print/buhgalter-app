@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.13"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.14"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -2280,16 +2280,37 @@ class ClientsScreen(Screen):
             _since = self._stats_since()
             _ss_txt = ((getattr(app, '_extra_data', None) or {}).get('stats_since') or '')[:8]
             _divider_done = False
+            _old_rows = []
+            _old_items = [it for it in log if _since is not None and not self._after(it.get('date'), _since)]
+            _old_sum = sum(safe_float(it.get('profit', 0)) for it in _old_items)
+            _old_btn = None
             if _since is not None and not any(self._after(it.get('date'), _since) for it in log):
                 grid.add_widget(self._gr_auto_label(
                     f"[color=#7A8494]После обнуления {_ss_txt} заказов ещё нет[/color]", font='14sp'))
             for it in reversed(log):
                 _old = _since is not None and not self._after(it.get('date'), _since)
-                if _old and not _divider_done:          # черта: ниже — прошлое, только для информации
+                if _old and not _divider_done:          # прошлое свёрнуто в одну строку с суммой
                     _divider_done = True
-                    grid.add_widget(self._gr_auto_label(
-                        f"[b]——— ДО ОБНУЛЕНИЯ {_ss_txt} (для информации) ———[/b]", font='13sp',
-                        color=(0.55, 0.6, 0.66, 1)))
+                    _sg = '+' if _old_sum >= 0 else '-'
+                    _old_title = (f"ДО ОБНУЛЕНИЯ {_ss_txt}: {_sg}{rub(abs(_old_sum))} \u20bd\n"
+                                  f"{len(_old_items)} зак. — ")
+                    _old_btn = RoundedButton(text=_old_title + "показать", bg_color=(0.2, 0.23, 0.29, 1),
+                                             size_hint_y=None, height=_sp(56), bold=True, font_size='14sp',
+                                             radius=GR_RADIUS)
+
+                    def _toggle(b, _t=_old_title):
+                        if getattr(b, '_open', False):
+                            for w in _old_rows:
+                                grid.remove_widget(w)
+                            b._open = False
+                            b.text = _t + "показать"
+                        else:
+                            for w in _old_rows:
+                                grid.add_widget(w)
+                            b._open = True
+                            b.text = _t + "скрыть"
+                    _old_btn.bind(on_release=_toggle)
+                    grid.add_widget(_old_btn)
                 pr = safe_float(it.get('profit', 0))
                 to_roll = safe_float(it.get('to_roll', 0))
                 col = '#8FE6B0' if pr >= 0 else '#FF6B6B'
@@ -2312,7 +2333,10 @@ class ClientsScreen(Screen):
                 line.bind(width=lambda s, v: setattr(s, 'text_size', (v, None)))
                 line.bind(texture_size=lambda s, v, r=row: setattr(r, 'height', max(90, v[1] + 20)))
                 row.add_widget(line)
-                grid.add_widget(row)
+                if _old:
+                    _old_rows.append(row)               # показываются по нажатию на строку «ДО ОБНУЛЕНИЯ»
+                else:
+                    grid.add_widget(row)
         pop.content.add_widget(legend)
         pop.content.add_widget(scroll)
         btn_clear = RoundedButton(text="\u041e\u0427\u0418\u0421\u0422\u0418\u0422\u042c \u0418\u0421\u0422\u041e\u0420\u0418\u042e", bg_color=(0.5, 0.22, 0.55, 1), size_hint_y=None, height=104, bold=True, radius=22, font_size='19sp')
