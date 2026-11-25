@@ -412,7 +412,8 @@ def consume_roll_for_order(app, client, item):
             sz = parse_size(h.get('desc'))
             if sz:
                 others.append(sz)
-    delta = round(max(0.0, pack_length(others + [size], w) - pack_length(others, w)), 2)
+    # без полей: по чистому размеру, как Олег и клиент (Алексей 25.11); поправить можно вручную
+    delta = round(max(0.0, pack_length(others + [size], w, margin=0) - pack_length(others, w, margin=0)), 2)
     if delta <= 0:                      # встало рядом с другими заказами дня — лишней длины нет
         item['roll_m'], item['roll_rid'] = 0.0, roll['rid']
         add_roll_log(app, {'kind': 'списано', 'm': 0.0, 'left': round(number(roll.get('remain')), 2), 'color': color,

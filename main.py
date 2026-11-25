@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.20"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.21"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3519,7 +3519,7 @@ class ClientsScreen(Screen):
                 self._fit_font(lbl, max_sp=20, min_sp=12,
                                fallback=f"[b][color=#FFFFFF]{disp}[/color][/b]  [b][color={_rcol}]{rem} м[/color][/b] [color=#7A8494]/ {tot}[/color]")
                 r.add_widget(lbl)
-                r.bind(on_release=lambda x, i=ri: self._roll_edit_popup(i, pop))
+                r.bind(on_release=lambda x, i=ri: self._roll_card(i, pop))
                 grid.add_widget(r)
 
         rebuild()
@@ -3734,7 +3734,99 @@ class ClientsScreen(Screen):
         name = {'white': 'БЕЛЫЙ', 'black': 'ЧЁРНЫЙ', 'plenka': 'ПЛЁНКА'}[color]
         self._roll_edit_popup(ri, None, preset_color=color, title=f"ЗАКУПКА: {name}")
 
-    def _roll_edit_popup(self, ri, list_pop, preset_color=None, title=None):
+    def _roll_history_entries(self, roll):
+        """История рулона: своя + списания за заказы из общего журнала того же цвета, без повторов, по дате."""
+        app = App.get_running_app()
+        out, seen = [], set()
+        g = ((getattr(app, '_extra_data', None) or {}).get('roll_log') or [])
+        for e in list(roll.get('log', []) or []) + [x for x in g if x.get('color', 'white') == roll.get('color', 'white')
+                                                     and x.get('kind') in ('списано', 'добавлено')]:
+            k = (str(e.get('date', ''))[:14], e.get('kind'), round(safe_float(e.get('m')), 2),
+                 round(safe_float(e.get('left')), 2))
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(e)
+
+        def _dkey(e):
+            d = str(e.get('date', ''))
+            return (d[6:8], d[3:5], d[0:2], d[9:14]) if len(d) >= 14 else ('', '', '', '')
+        out.sort(key=_dkey)
+        return out
+
+    def _roll_history_line(self, e):
+        sign = {'списано': '−', 'добавлено': '+'}.get(e.get('kind'), '')
+        col = {'списано': '#FFB74D', 'добавлено': '#8FE6B0'}.get(e.get('kind'), '#AAB4C8')
+        m_, l_ = safe_float(e.get('m')), safe_float(e.get('left'))
+        b_ = {'списано': l_ + m_, 'добавлено': l_ - m_}.get(e.get('kind'))
+        bt = f"{format_num_simple(round(b_, 2))} » " if b_ is not None else ""
+        who = escape_markup(str(e.get('who', '') or e.get('note', '') or '').strip())
+        return (f"{str(e.get('date', ''))[:8]}  [color={col}]{e.get('kind', '')} {sign}{format_num_simple(e.get('m', 0))} м[/color]"
+                f"  [b][color=#E3E9F2]{bt}{format_num_simple(e.get('left', 0))}[/color][/b]"
+                + (f"\n   [color=#AAB4C8]{who}[/color]" if who else ""))
+
+    def _roll_history_popup(self, ri, back_cb=None):
+        app = App.get_running_app()
+        if not app or ri is None or ri >= len(app.rolls or []):
+            return
+        roll = app.rolls[ri]
+        disp = {"white": "БЕЛЫЙ", "plenka": "ПЛЁНКА"}.get(roll.get('color', 'white'), "ЧЁРНЫЙ")
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        pop = TopMenuPopup(title=f"ИСТОРИЯ: {disp}", content=content, size_hint=(0.96, 0.92))
+        pop.background_color = GR_BG
+        content.add_widget(self._gr_auto_label("[color=#7F8A99]было » осталось, м. Сверху — последние.[/color]", font='13sp'))
+        scroll = ScrollView()
+        grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
+        grid.bind(minimum_height=grid.setter('height'))
+        scroll.add_widget(grid)
+        content.add_widget(scroll)
+        ents = self._roll_history_entries(roll)
+        if not ents:
+            grid.add_widget(self._gr_auto_label("[color=#7F8A99]пока пусто[/color]", font='15sp'))
+        for e in reversed(ents[-80:]):
+            grid.add_widget(self._gr_panel([self._gr_auto_label(self._roll_history_line(e), font='15sp', color=GR_TEXT,
+                                                                halign='left')], pad=6))
+        content.add_widget(self.get_bottom_buttons(pop, back_cb, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
+
+    def _roll_card(self, ri, list_pop):
+        """Карточка рулона: сколько осталось + три кнопки (история / пришёл рулон / исправить)."""
+        app = App.get_running_app()
+        if not app or ri is None or ri >= len(app.rolls or []):
+            return
+        roll = app.rolls[ri]
+        _c = roll.get('color', 'white')
+        disp = {"white": "БЕЛЫЙ", "plenka": "ПЛЁНКА"}.get(_c, "ЧЁРНЫЙ")
+        content = BoxLayout(orientation='vertical', spacing=_sp(10), padding=[_sp(12), _sp(8), _sp(12), _sp(10)])
+        pop = TopMenuPopup(title=disp, content=content, size_hint=(0.94, 0.8))
+        pop.background_color = GR_BG
+        rem = safe_float(roll.get('remain'))
+        _rcol = '#FF6B6B' if rem < 0 else '#5FD39B'
+        w = format_num_simple(roll.get('width') or 0) if safe_float(roll.get('width')) > 0 else '3.2'
+        content.add_widget(self._gr_panel([
+            self._gr_auto_label("ОСТАТОК", font='15sp', color=(0.62, 0.67, 0.74, 1)),
+            self._gr_auto_label(f"[b][color={_rcol}]{format_num_simple(round(rem, 2))} м[/color][/b]", font='40sp'),
+            self._gr_auto_label(f"[color=#7F8A99]ширина {w} м" + ("  ·  в минусе — напечатано в долг" if rem < 0 else "")
+                                + "[/color]", font='14sp')], pad=10))
+
+        def _go(fn):
+            pop.dismiss()
+            fn()
+        for txt, col, fn in (
+                ("ИСТОРИЯ СПИСАНИЙ", (0.2, 0.23, 0.29, 1),
+                 lambda: self._roll_history_popup(ri, back_cb=lambda *a: self._roll_card(ri, list_pop))),
+                ("ПРИШЁЛ РУЛОН", (0.16, 0.45, 0.32, 1), lambda: self._roll_edit_popup(ri, list_pop, mode='arrive')),
+                ("ИСПРАВИТЬ ОСТАТОК", (0.72, 0.53, 0.13, 1), lambda: self._roll_edit_popup(ri, list_pop, mode='fix'))):
+            b = RoundedButton(text=txt, bg_color=col, bold=True, font_size='19sp', radius=GR_RADIUS,
+                              size_hint_y=None, height=_sp(56))
+            b.bind(on_release=lambda x, f=fn: _go(f))
+            content.add_widget(b)
+        content.add_widget(Widget())
+        content.add_widget(self.get_bottom_buttons(pop, None, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
+
+    def _roll_edit_popup(self, ri, list_pop, preset_color=None, title=None, mode=None):
+        """mode=None — всё сразу (новый рулон, закупка); 'arrive' — только «пришёл рулон»; 'fix' — только исправить остаток."""
         app = App.get_running_app()
         if not app:
             return
@@ -3744,6 +3836,11 @@ class ClientsScreen(Screen):
         roll = {} if is_new else app.rolls[ri]
         state = {'color': preset_color or roll.get('color', 'white')}
         content = BoxLayout(orientation='vertical', spacing=10, padding=[16, 10, 16, 10])
+        _disp = {"white": "БЕЛЫЙ", "plenka": "ПЛЁНКА"}.get(state['color'], "ЧЁРНЫЙ")
+        if mode == 'arrive':
+            title = title or f"ПРИШЁЛ РУЛОН: {_disp}"
+        elif mode == 'fix':
+            title = title or f"ИСПРАВИТЬ: {_disp}"
         pop = TopMenuPopup(title=title or ("НОВЫЙ РУЛОН" if is_new else "РУЛОН"), content=content, size_hint=(0.94, 0.86))
         pop.background_color = (0.043, 0.055, 0.08, 1)
 
@@ -3770,8 +3867,13 @@ class ClientsScreen(Screen):
         color_row.add_widget(btn_white)
         color_row.add_widget(btn_black)
         color_row.add_widget(btn_plenka)
-        content.add_widget(Label(text="[b]ЦВЕТ[/b]", markup=True, font_size='15sp', color=(0.6, 0.65, 0.72, 1), size_hint_y=None, height=30))
-        content.add_widget(color_row)
+        if mode is None:
+            content.add_widget(Label(text="[b]ЦВЕТ[/b]", markup=True, font_size='15sp', color=(0.6, 0.65, 0.72, 1), size_hint_y=None, height=30))
+            content.add_widget(color_row)
+        else:                                    # отдельные окна: сколько сейчас — крупно сверху
+            content.add_widget(self._gr_auto_label(
+                f"сейчас на рулоне: [b][color=#5FD39B]{format_num_simple(roll.get('remain', '0'))} м[/color][/b]",
+                font='18sp', color=GR_TEXT))
 
         # Компактно: поля парами, чтобы «СОХРАНИТЬ» было видно над клавиатурой.
         def _pair(left, right):
@@ -3789,8 +3891,15 @@ class ClientsScreen(Screen):
         in_use = _dark_input(hint_text="расход, м", input_type='number', input_filter='float')
         in_tot = _dark_input(text=format_num_simple(roll.get('total', '0')) if not is_new else "", hint_text="длина всего", input_type='number', input_filter='float')
         in_rem = _dark_input(text=format_num_simple(roll.get('remain', '0')) if not is_new else "", hint_text="сколько осталось", input_type='number', input_filter='float')
-        _pair(("[b]ВСЕГО, м[/b]", (0.55, 0.6, 0.7, 1), in_tot), ("[b]ОСТАТОК, м[/b]", (0.41, 0.94, 0.68, 1), in_rem))
-        _pair(("[b]ШИРИНА, м[/b]", (0.4, 0.8, 1, 1), in_w), ("[b]СПИСАТЬ РАСХОД[/b]", (1.0, 0.72, 0.3, 1), in_use))
+        in_add = _dark_input(hint_text="0", input_type='number', input_filter='float')
+        if mode is None:
+            _pair(("[b]ВСЕГО, м[/b]", (0.55, 0.6, 0.7, 1), in_tot), ("[b]ОСТАТОК, м[/b]", (0.41, 0.94, 0.68, 1), in_rem))
+            _pair(("[b]ШИРИНА, м[/b]", (0.4, 0.8, 1, 1), in_w), ("[b]СПИСАТЬ РАСХОД[/b]", (1.0, 0.72, 0.3, 1), in_use))
+        elif mode == 'fix':
+            _pair(("[b]ОСТАТОК, м[/b]", (0.41, 0.94, 0.68, 1), in_rem), ("[b]СПИСАТЬ РАСХОД[/b]", (1.0, 0.72, 0.3, 1), in_use))
+            _pair(("[b]ШИРИНА, м[/b]", (0.4, 0.8, 1, 1), in_w), ("[b] [/b]", (0, 0, 0, 0), Widget()))
+        else:                                    # arrive: сколько метров пришло
+            _pair(("[b]ПРИШЛО, м[/b]", (0.41, 0.94, 0.68, 1), in_add), ("[b]ШИРИНА, м[/b]", (0.4, 0.8, 1, 1), in_w))
 
         # Пришёл новый рулон: одним нажатием прибавить 50 или 75 м к остатку (и к «всего»)
         add_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=_sp(46))
@@ -3798,6 +3907,9 @@ class ClientsScreen(Screen):
                                  color=(0.41, 0.94, 0.68, 1), size_hint_x=0.4))
 
         def _add_m(m):
+            if mode == 'arrive':
+                in_add.text = format_num_simple(round(safe_float(in_add.text) + m, 2))
+                return
             state['added'] = state.get('added', 0) + m
             in_rem.text = format_num_simple(round(safe_float(in_rem.text) + m, 2))
             in_tot.text = format_num_simple(round(safe_float(in_tot.text) + m, 2))
@@ -3806,7 +3918,8 @@ class ClientsScreen(Screen):
                               font_size='18sp', size_hint_x=0.3)
             b.bind(on_release=lambda x, m=_m: _add_m(m))
             add_row.add_widget(b)
-        content.add_widget(add_row)
+        if mode != 'fix':
+            content.add_widget(add_row)
 
         # Сколько заплатил за рулон — уходит в минус рулона (как «ЗАКУПКА»), окупается заказами
         pay_row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=_sp(46))
@@ -3817,7 +3930,8 @@ class ClientsScreen(Screen):
         pay_row.height = _sp(54)
         pay_row.add_widget(_bordered_field(in_pay, (1.0, 0.72, 0.3, 1), _sp(54), 1.0))
         pay_row.children[0].size_hint_x = 0.6
-        content.add_widget(pay_row)
+        if mode != 'fix':
+            content.add_widget(pay_row)
 
         # Кто заплатил за рулон: я сам или исполнитель (Олег купил — значит, я ему должен)
         payers = [(None, "Я САМ")] + [(i, str(c.get('name', ''))) for i, c in enumerate(app.clients) if c.get('is_creditor')]
@@ -3841,12 +3955,22 @@ class ClientsScreen(Screen):
             payer_btns.append((pi, b))
             who_row.add_widget(b)
         paint_payers()
-        content.add_widget(who_row)
+        if mode != 'fix':
+            content.add_widget(who_row)
 
         def do_save(x):
             if getattr(pop, 'is_dismissing_flag', False):
                 return
             pop.is_dismissing_flag = True
+            if mode == 'arrive':                 # пришло N м: прибавить к остатку и к «всего»
+                _ad = safe_float(in_add.text)
+                if _ad <= 0:
+                    pop.is_dismissing_flag = False
+                    self._stub_popup('РУЛОН', 'Сколько метров пришло? Нажмите +50 / +75 или впишите.')
+                    return
+                state['added'] = _ad
+                in_rem.text = format_num_simple(round(safe_float(roll.get('remain', 0)) + _ad, 2))
+                in_tot.text = format_num_simple(round(safe_float(roll.get('total', 0)) + _ad, 2))
             use_val = safe_float(in_use.text)
             rem_val = safe_float(in_rem.text)
             if use_val > 0:
@@ -3962,7 +4086,9 @@ class ClientsScreen(Screen):
             _hist_lbl = self._gr_auto_label(_txt, font='13sp', color=GR_TEXT, halign='left')
         else:
             _hist_lbl = None
-        for f in (in_w, in_use, in_tot, in_rem):   # клавиша ↵ на клавиатуре = СОХРАНИТЬ
+        if mode is not None:                     # история — отдельной кнопкой в карточке рулона
+            _hist_lbl = None
+        for f in (in_w, in_use, in_tot, in_rem, in_add):   # клавиша ↵ на клавиатуре = СОХРАНИТЬ
             f.bind(on_text_validate=do_save)
         content.add_widget(btn_save)
         if _hist_lbl is not None:                   # история — под «СОХРАНИТЬ», чтобы кнопка была над клавиатурой
@@ -3971,7 +4097,7 @@ class ClientsScreen(Screen):
         row = BoxLayout(orientation='horizontal', spacing=12, size_hint_y=None, height=100)
         btn_back = RoundedButton(text="НАЗАД", bg_color=(1, 0.45, 0, 1), bold=True, radius=22, font_size='20sp', size_hint_x=0.45)
         btn_back.bind(on_release=lambda x: pop.dismiss())
-        if is_new:
+        if is_new or mode == 'arrive':
             btn_close = CancelButton(text="ОТМЕНА", bg_color=(0.6, 0.2, 0.2, 1), bold=True, font_size='20sp', size_hint_x=0.55)
             btn_close.bind(on_release=lambda x: pop.dismiss())
         else:
