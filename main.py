@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.15"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.16"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -2258,8 +2258,10 @@ class ClientsScreen(Screen):
                            size_hint=(0.95, 0.9))
         pop.title_size = '18sp'
         pop.background_color = (0.043, 0.055, 0.08, 1)
-        legend = Label(text="", markup=True, font_size='13sp', size_hint_y=None, height=68, halign='center', valign='middle')
-        legend.text = "[color=#8FE6B0]зелёный — прибыль[/color]\n[color=#8FB8FF]синий — ушло на оплату рулона[/color]"
+        legend = Label(text="", markup=True, font_size='13sp', size_hint_y=None, height=_sp(66), halign='center', valign='middle')
+        legend.text = ("[color=#8FE6B0]зелёный — прибыль (свободные деньги)[/color]\n"
+                       "[color=#8FB8FF]синий — ушло на окупаемость рулона[/color]\n"
+                       "[color=#FFD54F]жёлтый — чистая минус материал (для %)[/color]")
         legend.bind(size=lambda s, v: setattr(s, 'text_size', v))
         if not log:
             empty = Label(text="[color=#5A6472]\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0437\u0430\u043f\u0438\u0441\u0435\u0439.\n\u041d\u043e\u0432\u044b\u0435 \u0437\u0430\u043a\u0430\u0437\u044b \u043f\u043e\u044f\u0432\u044f\u0442\u0441\u044f \u0437\u0434\u0435\u0441\u044c.[/color]",
@@ -2276,6 +2278,11 @@ class ClientsScreen(Screen):
             _since = self._stats_since()
             _ss_txt = ((getattr(app, '_extra_data', None) or {}).get('stats_since') or '')[:8]
             _divider_done = False
+            _orders = {}
+            for _c in app.clients:
+                for _h in _c.get('history', []) + _c.get('archived_history', []):
+                    if _h.get('oid'):
+                        _orders[_h['oid']] = _h
             _old_rows = []
             _old_items = [it for it in log if _since is not None and not self._after(it.get('date'), _since)]
             _old_sum = sum(safe_float(it.get('profit', 0)) for it in _old_items)
@@ -2323,6 +2330,14 @@ class ClientsScreen(Screen):
                         RoundedRectangle(pos=w.pos, size=w.size, radius=[(14, 14)] * 4)
                 row.bind(pos=_rb, size=_rb)
                 extra = f"  [size=13sp][color=#8FB8FF]в рулон {rub(to_roll)}[/color][/size]" if to_roll > 0.004 else ''
+                _h = _orders.get(it.get('oid'))
+                if _h is not None and not _old:       # чистая ≈ : заказ − исполнителю − материал с обрезками
+                    try:
+                        _net = safe_float(_h.get('sum')) - safe_float(_h.get('print_cost')) - app.order_material_cost(_h)
+                        extra += (f"\n[size=13sp][color=#FFD54F]чист. ≈ {'-' if _net < 0 else ''}"
+                                  f"{rub(abs(_net))} \u20bd[/color][/size]")
+                    except Exception:
+                        pass
                 line = Label(text=f"[b]{name}[/b]  [size=12sp][color=#7A8494]{date}[/color][/size]   [b][color={col}]{sign}{rub(abs(pr))} \u20bd[/color][/b]" + extra,
                              markup=True, font_size='17sp', color=((0.55, 0.6, 0.66, 1) if _old else (1, 1, 1, 1)),
                              halign='left', valign='middle')
