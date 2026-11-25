@@ -450,6 +450,18 @@ class RollPaybackTests(unittest.TestCase):
         self.assertIsNone(self.app.profit_percent())                     # наценка тоже с нуля
         self.assertEqual(self.screen.month_stats(), {})
 
+    def test_migration_stats_since_from_journal(self):
+        import json
+        data = {'clients': [{'name': 'МАЛЕВИЧ', 'debt': '0', 'cid': 'mk', 'is_creditor': True}],
+                'profit_correction': '0', 'roles_version': 1, 'profit_model': 2,
+                'journal': [{'t': '2026-11-25 10:30:12', 'op': 'правка прибыли', 'cid': '__profit__',
+                             'name': 'ПРИБЫЛЬ', 'was': '-50000', 'now': '-120646'}]}
+        with open(main.DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False)
+        app = main.BusinessApp(); main.App._running_app = app
+        app.load_data()
+        self.assertEqual(app._extra_data['stats_since'], '25.11.26 10:30:12')
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()

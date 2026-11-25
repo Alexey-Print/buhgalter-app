@@ -2262,10 +2262,24 @@ class ClientsScreen(Screen):
                     p = (d or '').split(' ')[0].split('.'); return '%d %s' % (int(p[0]), _MN[int(p[1])])
                 except Exception:
                     return d or ''
+            _since = self._stats_since()
+            _ss_txt = ((getattr(app, '_extra_data', None) or {}).get('stats_since') or '')[:8]
+            _divider_done = False
+            if _since is not None and not any(self._after(it.get('date'), _since) for it in log):
+                grid.add_widget(self._gr_auto_label(
+                    f"[color=#7A8494]После обнуления {_ss_txt} заказов ещё нет[/color]", font='14sp'))
             for it in reversed(log):
+                _old = _since is not None and not self._after(it.get('date'), _since)
+                if _old and not _divider_done:          # черта: ниже — прошлое, только для информации
+                    _divider_done = True
+                    grid.add_widget(self._gr_auto_label(
+                        f"[b]——— ДО ОБНУЛЕНИЯ {_ss_txt} (для информации) ———[/b]", font='13sp',
+                        color=(0.55, 0.6, 0.66, 1)))
                 pr = safe_float(it.get('profit', 0))
                 to_roll = safe_float(it.get('to_roll', 0))
                 col = '#8FE6B0' if pr >= 0 else '#FF6B6B'
+                if _old:
+                    col = '#6F7A88'
                 sign = '+' if pr >= 0 else '-'
                 name = (it.get('name') or '').upper()
                 date = _sd(it.get('date') or '')
@@ -2278,7 +2292,8 @@ class ClientsScreen(Screen):
                 row.bind(pos=_rb, size=_rb)
                 extra = f"  [size=13sp][color=#8FB8FF]в рулон {rub(to_roll)}[/color][/size]" if to_roll > 0.004 else ''
                 line = Label(text=f"[b]{name}[/b]  [size=12sp][color=#7A8494]{date}[/color][/size]   [b][color={col}]{sign}{rub(abs(pr))} \u20bd[/color][/b]" + extra,
-                             markup=True, font_size='17sp', color=(1, 1, 1, 1), halign='left', valign='middle')
+                             markup=True, font_size='17sp', color=((0.55, 0.6, 0.66, 1) if _old else (1, 1, 1, 1)),
+                             halign='left', valign='middle')
                 line.bind(width=lambda s, v: setattr(s, 'text_size', (v, None)))
                 line.bind(texture_size=lambda s, v, r=row: setattr(r, 'height', max(90, v[1] + 20)))
                 row.add_widget(line)
@@ -6004,6 +6019,7 @@ class BusinessApp(App):
         self._journal_base = journal_balances(self)
         self.migrate_oleg_black_2311()          # после основы журнала — чтобы +11 760 Олегу попало в журнал
         self.migrate_material_price()
+        self.migrate_stats_since_from_zero()
         self._migrate_rolls_if_needed()
         self.save_data()
 
@@ -6026,6 +6042,24 @@ class BusinessApp(App):
         for _, c, h in todo:
             consume_roll_for_order(self, c, h)
         extra['roll_writeoff_2311b'] = True
+
+    def migrate_stats_since_from_zero(self):
+        """Однократно (4.12): Алексей обнулил прибыль карандашом 25.11 в 4.11 — тогда время «с нуля» не
+        запоминалось. Берём время последней «правки прибыли» за 25.11.26 из журнала."""
+        extra = getattr(self, '_extra_data', None)
+        if extra is None:
+            extra = self._extra_data = {}
+        if extra.get('stats_since_2511') or extra.get('stats_since'):
+            extra['stats_since_2511'] = True
+            return
+        last = None
+        for j in getattr(self, 'journal', None) or []:
+            if j.get('cid') == '__profit__' and j.get('op') == 'правка прибыли' and str(j.get('t', '')).startswith('2026-11-25'):
+                last = j
+        if last is not None:
+            t = str(last.get('t', ''))          # '2026-11-25 10:30:12'
+            extra['stats_since'] = f"{t[8:10]}.{t[5:7]}.{t[2:4]} {t[11:19]}"
+        extra['stats_since_2511'] = True
 
     def migrate_material_price(self):
         """Однократно (4.11): цена чёрного по закупке 23.11 — 11 760 ÷ (75 × 3.2) = 49 ₽/м² (со слов Алексея)."""
