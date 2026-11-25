@@ -1663,11 +1663,12 @@ class ClientsScreen(Screen):
             return months.setdefault(mk, {'revenue': 0.0, 'profit': 0.0, 'orders': 0, 'm2': {}, 'roll_m': {},
                                           'clients': {}})
         names = {'banner_white': 'белый', 'banner_black': 'чёрный', 'client_material': 'мат. клиента'}
+        since = self._stats_since()
         for c in app.clients:
             if c.get('is_creditor'):
                 continue
             for h in c.get('history', []) + c.get('archived_history', []):
-                if h.get('source_oid'):
+                if h.get('source_oid') or not self._after(h.get('date'), since):
                     continue
                 mk = m_of(h.get('date'))
                 if not mk:
@@ -1689,18 +1690,38 @@ class ClientsScreen(Screen):
                     bk['roll_m'][rn] = bk['roll_m'].get(rn, 0.0) + safe_float(h.get('roll_m'))
         for p_ in getattr(app, 'profit_log', None) or []:
             mk = m_of(p_.get('date'))
-            if mk:
+            if mk and self._after(p_.get('date'), since):
                 bucket(mk)['profit'] += safe_float(p_.get('profit'))
         return months
 
+    def _stats_since(self):
+        app = App.get_running_app()
+        v = (getattr(app, '_extra_data', None) or {}).get('stats_since')
+        for fmt in ('%d.%m.%y %H:%M:%S', '%d.%m.%y %H:%M'):
+            try:
+                return datetime.strptime(v, fmt) if v else None
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def _after(date_str, since):
+        if since is None:
+            return True
+        try:
+            return datetime.strptime(str(date_str or '')[:14], '%d.%m.%y %H:%M') >= since
+        except ValueError:
+            return True
+
     def client_ordered_total(self, c):
         """Сколько клиент заказал за всё время: заказы после обнуления (ordered_since) + ручная правка (ordered_adj)."""
-        since = None
+        since = self._stats_since()
         if c.get('ordered_since'):
             try:
-                since = datetime.strptime(c['ordered_since'], '%d.%m.%y %H:%M')
+                own = datetime.strptime(c['ordered_since'], '%d.%m.%y %H:%M')
+                since = own if since is None or own > since else since
             except ValueError:
-                since = None
+                pass
         total = 0.0
         for h in c.get('history', []) + c.get('archived_history', []):
             if h.get('source_oid'):
@@ -1847,8 +1868,70 @@ class ClientsScreen(Screen):
                     f"{escape_markup(k)} [b]{rub(v)}[/b]" for k, v in top))
             grid.add_widget(self._gr_panel([self._gr_auto_label("\n".join(lines), font='15sp', color=GR_TEXT,
                                                                 halign='left')], pad=10))
+        app_ = App.get_running_app()
+        extra = getattr(app_, '_extra_data', None) or {}
+        if extra.get('stats_since'):
+            content.add_widget(self._gr_auto_label(
+                f"[color=#AAB4C8]Считается с {extra['stats_since'][:8]}[/color]", font='13sp'))
+        zrow = BoxLayout(orientation='horizontal', spacing=_sp(6), size_hint_y=None, height=_sp(44))
+        b_zero = RoundedButton(text="НАЧАТЬ С НУЛЯ", bg_color=(0.45, 0.17, 0.17, 1), border_color=GR_BORDER,
+                               bold=True, font_size='14sp', radius=GR_RADIUS)
+        b_zero.bind(on_release=lambda x: self._stats_reset_confirm(pop))
+        zrow.add_widget(b_zero)
+        if extra.get('stats_since'):
+            b_back = RoundedButton(text="ВЕРНУТЬ КАК БЫЛО", bg_color=GR_PANEL, border_color=GR_BORDER,
+                                   bold=True, font_size='14sp', radius=GR_RADIUS)
+            b_back.bind(on_release=lambda x: self._stats_reset_apply(pop, undo=True))
+            zrow.add_widget(b_back)
+        content.add_widget(zrow)
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
+
+    def _stats_reset_confirm(self, stats_pop):
+        box = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        cp = TopMenuPopup(title="НАЧАТЬ С НУЛЯ?", content=box, size_hint=(0.94, 0.6))
+        cp.background_color = GR_BG
+        box.add_widget(self._gr_auto_label(
+            "[b]Обнулится:[/b] прибыль за всё время, наценка %,\nстатистика по месяцам и «за всё время» по клиентам.\n"
+            "[b]Не тронется:[/b] долги, история заказов,\nостатки и минус рулонов.\n"
+            "Потом можно вернуть как было.", font='14sp', color=GR_TEXT))
+        b_yes = RoundedButton(text="ДА, С НУЛЯ", bg_color=(0.45, 0.17, 0.17, 1), size_hint_y=None, height=_sp(48),
+                              bold=True, font_size='16sp', radius=GR_RADIUS)
+        b_yes.bind(on_release=lambda x: (cp.dismiss(), self._stats_reset_apply(stats_pop)))
+        box.add_widget(b_yes)
+        box.add_widget(Widget())
+        box.add_widget(self.get_bottom_buttons(cp, cancel_text="ОТМЕНА"))
+        cp.open()
+
+    def _stats_reset_apply(self, stats_pop, undo=False):
+        """С нуля: stats_since = сейчас, общая прибыль = 0 (прежняя поправка запоминается). undo — вернуть."""
+        app = App.get_running_app()
+        extra = getattr(app, '_extra_data', None)
+        if extra is None:
+            extra = app._extra_data = {}
+        snap = snapshot(app)
+        old_extra = dict(extra)
+        if undo:
+            # вернуть убранную прибыль (новые заказы после обнуления сохраняются)
+            app.profit_correction = str(round(safe_float(app.profit_correction)
+                                              + safe_float(extra.get('stats_removed_profit')), 2))
+            for k in ('stats_since', 'stats_removed_profit'):
+                extra.pop(k, None)
+            op = 'статистика: вернуть как было'
+        else:
+            removed = app.get_totals()[3]                            # сколько прибыли убираем
+            extra['stats_removed_profit'] = round(safe_float(extra.get('stats_removed_profit')) + removed, 2)
+            extra['stats_since'] = datetime.now().strftime('%d.%m.%y %H:%M:%S')
+            app.profit_correction = str(round(safe_float(app.profit_correction) - removed, 2))   # общая = 0
+            op = 'статистика: с нуля'
+        ok, message = commit(app, snap, op)
+        if not ok:
+            extra.clear(); extra.update(old_extra)
+            self._stub_popup('СТАТИСТИКА', message)
+            return
+        stats_pop.dismiss()
+        self.refresh_list()
+        self.show_month_stats()
 
     def _two_line_label(self, caption, value):
         """Сверху мелко серым — что это, снизу крупно — сумма."""
@@ -5711,10 +5794,24 @@ class BusinessApp(App):
                 if h.get('oid'):
                     orders[h['oid']] = h
         revenue = cost = 0.0
+        _ss = (getattr(self, '_extra_data', None) or {}).get('stats_since')
+        _since = None
+        for _fmt in ('%d.%m.%y %H:%M:%S', '%d.%m.%y %H:%M'):
+            try:
+                _since = datetime.strptime(_ss, _fmt) if _ss else None
+                break
+            except ValueError:
+                continue
         for p_ in getattr(self, 'profit_log', None) or []:
             h = orders.get(p_.get('oid'))
             if h is None:
                 continue
+            if _since is not None:
+                try:
+                    if datetime.strptime(str(p_.get('date', ''))[:14], '%d.%m.%y %H:%M') < _since:
+                        continue
+                except ValueError:
+                    pass
             revenue += safe_float(h.get('sum'))
             cost += safe_float(h.get('print_cost')) + self.order_material_cost(h)
         if cost < 1:

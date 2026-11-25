@@ -416,6 +416,18 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.screen.client_ordered_total(self.sasha), (0, 0))
         self.screen.show_month_stats()
 
+    def test_stats_start_from_zero_and_undo(self):
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_white', order_desc='1x1 x1шт'))
+        self.screen.refresh_list = lambda: None
+        self.screen._stats_reset_apply(main.Popup())
+        self.assertEqual(self.profit(), 0)
+        self.assertEqual(self.screen.month_stats(), {})
+        self.assertEqual(self.sasha['debt'], '1 000')                   # долг не тронут
+        self.screen._stats_reset_apply(main.Popup(), undo=True)
+        self.assertEqual(self.profit(), 1000)
+        self.assertTrue(self.screen.month_stats())
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()
