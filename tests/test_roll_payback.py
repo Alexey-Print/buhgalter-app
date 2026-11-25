@@ -59,11 +59,16 @@ class RollPaybackTests(unittest.TestCase):
 
     def test_profit_percent_from_invested(self):
         self.assertIsNone(self.app.profit_percent())
-        self.assertTrue(purchase_banner(self.app, 'black', 900)[0])
-        self.order(1000)                      # 900 в рулон, 100 прибыль -> 100 / 900
-        self.assertEqual(self.app.profit_percent(), 11)
-        self.order(1000)                      # +1000 прибыль -> 1100 / 900
-        self.assertEqual(self.app.profit_percent(), 122)
+        self.app.rolls = [{'color': 'black', 'width': '3.2', 'total': '75', 'remain': '75', 'price_m2': 49}]
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
+        main.ensure_ids(self.app.clients)
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        # 2×2 по 200: клиенту 800, Олегу 55×4 = 220, материал 2.1 м × 3.2 × 49 = 329.28 (с обрезком и полями)
+        self.assertTrue(self.screen._final_save(idx, '800 руб', None, 'banner_black', print_cost=220,
+                                                via_malevich=True, creditor_idx=len(self.app.clients) - 1,
+                                                order_desc='2x2 x1шт'))
+        self.assertEqual(self.app.order_material_cost(self.sasha['history'][-1]), 329.28)
+        self.assertEqual(self.app.profit_percent(), round((800 - 220 - 329.28) / (220 + 329.28) * 100))   # 46%
 
     def plenka(self):
         return self.app.clients[self.app.plenka_index()]
@@ -371,6 +376,7 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.black()['debt'], '11 760')               # рулон окупается
         self.assertEqual(self.app.rolls[0]['remain'], '31.8')
         self.assertEqual(self.profit(), 0)
+        self.assertEqual(self.app.rolls[0]['price_m2'], 73.5)        # 11760 ÷ (50 × 3.2) — запомнена цена м²
         self.assertTrue(any('заплатил ОЛЕГ' in str(j.get('op')) for j in self.app.journal))
 
     def test_migration_oleg_black_2311(self):

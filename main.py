@@ -6,7 +6,7 @@ import time
 import math
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log, printed_meters, consume_roll_for_order, roll_log_len, roll_log_trim, order_roll_color
+from accounting import net_partners, JOURNAL_LIMIT, journal_balances, journal_entries, check_integrity, commit, creditor_is_referenced, number, money, ensure_ids, snapshot, restore, atomic_write, reverse_order, purchase_banner, clear_history, period_totals, prepare_android_storage, change_balance, payment_result, add_roll_log, printed_meters, consume_roll_for_order, roll_log_len, roll_log_trim, order_roll_color, parse_size, roll_length
 from datetime import datetime
 import transfer
 from collections import defaultdict
@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.10"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.11"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -2955,7 +2955,7 @@ class ClientsScreen(Screen):
             self._gr_auto_label("за всё время", font='14sp'),
             self._gr_auto_label(f"[b][color={col}]{sign}{rub(abs(current_profit))} руб[/color][/b]", font='34sp', color=GR_TEXT),
             self._gr_auto_label(
-                (f"[b][color=#FFD54F]{app.profit_percent()}%[/color][/b] от вложенных денег"
+                (f"[b][color=#FFD54F]{app.profit_percent()}%[/color][/b] наценка\n(к печати и материалу с обрезками)"
                  if app.profit_percent() is not None else "% появится после заказов"), font='15sp', color=GR_TEXT),
             self._gr_auto_label("считается в момент заказа: оплата долга её не меняет. "
                                 "Пока висит минус рулона — заказы сначала гасят его", font='12sp',
@@ -3525,6 +3525,11 @@ class ClientsScreen(Screen):
             else:
                 app.rolls[ri] = data
             paid = safe_float(in_pay.text)
+            _added = state.get('added', 0)
+            if paid > 0 and _added > 0 and safe_float(data['width']) > 0:   # цена материала за м² — для честного %
+                data['price_m2'] = round(paid / (_added * safe_float(data['width'])), 2)
+            elif roll.get('price_m2'):
+                data['price_m2'] = roll.get('price_m2')
             if paid > 0:
                 _, _, _bw, _bb = app.get_special_clients()
                 _card_i = {'white': _bw, 'black': _bb, 'plenka': app.plenka_index()}.get(state['color'])
@@ -5479,25 +5484,54 @@ class BusinessApp(App):
             real_profit = 0.0
         return tot_debt, my_debt, banner_deficit, real_profit
 
+    def material_price_m2(self, color):
+        """Цена материала за м² по последней закупке этого цвета (заплатил ÷ метры ÷ ширина).
+        Нет своей — берётся цена другого банера; нет никакой — 0."""
+        prices = {}
+        for r in getattr(self, 'rolls', None) or []:
+            if safe_float(r.get('price_m2')) > 0:
+                prices.setdefault(r.get('color', 'white'), safe_float(r.get('price_m2')))
+        if color in prices:
+            return prices[color]
+        for c in ('black', 'white', 'plenka'):
+            if c in prices:
+                return prices[c]
+        return 0.0
+
+    def order_material_cost(self, h):
+        """Материал заказа с обрезками: метры рулона × ширина рулона × цена за м²."""
+        color = order_roll_color(h)
+        if color is None:
+            return 0.0
+        roll = next((r for r in getattr(self, 'rolls', None) or [] if r.get('color', 'white') == color), None)
+        width = safe_float(roll.get('width')) if roll else 0.0
+        width = width or 3.2
+        if 'roll_m' in h:
+            meters = safe_float(h.get('roll_m'))
+        else:                                   # старые заказы — оценка по размерам
+            sz = parse_size(h.get('desc'))
+            meters = roll_length(sz[0], sz[1], sz[2], width) if sz else 0.0
+        return round(meters * width * self.material_price_m2(color), 2)
+
     def profit_percent(self):
-        """% прибыли от вложенных денег по заказам из истории прибыли:
-        вложено = сумма заказов − прибыль (исполнителю, на рулон, такси). None — считать не из чего."""
+        """Наценка, %: (сумма заказов − исполнителю − материал) ÷ (исполнителю + материал).
+        Материал — по метрам рулона с полями и обрезками × ширина × цена м² закупки.
+        Считается по заказам из истории прибыли. None — считать не из чего."""
         orders = {}
         for c in self.clients:
             for h in c.get('history', []) + c.get('archived_history', []):
                 if h.get('oid'):
                     orders[h['oid']] = h
-        total = profit = 0.0
+        revenue = cost = 0.0
         for p_ in getattr(self, 'profit_log', None) or []:
             h = orders.get(p_.get('oid'))
             if h is None:
                 continue
-            total += safe_float(h.get('sum'))
-            profit += safe_float(p_.get('profit'))
-        invested = total - profit
-        if invested < 1:
+            revenue += safe_float(h.get('sum'))
+            cost += safe_float(h.get('print_cost')) + self.order_material_cost(h)
+        if cost < 1:
             return None
-        return round(profit / invested * 100)
+        return round((revenue - cost) / cost * 100)
 
     def current_profit(self):
         """Текущая прибыль = общая минус всё, что отдано («ОТДАЛ»). Общая не меняется."""
@@ -5660,6 +5694,7 @@ class BusinessApp(App):
             self.journal = []
         self._journal_base = journal_balances(self)
         self.migrate_oleg_black_2311()          # после основы журнала — чтобы +11 760 Олегу попало в журнал
+        self.migrate_material_price()
         self._migrate_rolls_if_needed()
         self.save_data()
 
@@ -5682,6 +5717,20 @@ class BusinessApp(App):
         for _, c, h in todo:
             consume_roll_for_order(self, c, h)
         extra['roll_writeoff_2311b'] = True
+
+    def migrate_material_price(self):
+        """Однократно (4.11): цена чёрного по закупке 23.11 — 11 760 ÷ (75 × 3.2) = 49 ₽/м² (со слов Алексея)."""
+        extra = getattr(self, '_extra_data', None)
+        if extra is None:
+            extra = self._extra_data = {}
+        if extra.get('price_m2_2311'):
+            return
+        for r in getattr(self, 'rolls', None) or []:
+            if r.get('color') == 'black' and not safe_float(r.get('price_m2')):
+                w = safe_float(r.get('width')) or 3.2
+                r['price_m2'] = round(11760 / (75 * w), 2)
+                break
+        extra['price_m2_2311'] = True
 
     def migrate_oleg_black_2311(self):
         """Однократно (4.10): закупку чёрного 23.11.26 на 11 760 оплатил Олег — прибавить к моему долгу ему
