@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.22"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.23"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3732,7 +3732,9 @@ class ClientsScreen(Screen):
             return
         ri = next((i for i, r in enumerate(app.rolls or []) if r.get('color', 'white') == color), None)
         name = {'white': 'БЕЛЫЙ', 'black': 'ЧЁРНЫЙ', 'plenka': 'ПЛЁНКА'}[color]
-        self._roll_edit_popup(ri, None, preset_color=color, title=f"ЗАКУПКА: {name}")
+        # рулон есть — то же короткое окно «ПРИШЁЛ РУЛОН», что в карточке рулона; нет — завести новый
+        self._roll_edit_popup(ri, None, preset_color=color, title=f"ЗАКУПКА: {name}",
+                              mode='arrive' if ri is not None else None)
 
     def _roll_history_entries(self, roll):
         """История рулона: своя + списания за заказы из общего журнала того же цвета, без повторов, по дате."""
@@ -3891,7 +3893,7 @@ class ClientsScreen(Screen):
         in_use = _dark_input(hint_text="расход, м", input_type='number', input_filter='float')
         in_tot = _dark_input(text=format_num_simple(roll.get('total', '0')) if not is_new else "", hint_text="длина всего", input_type='number', input_filter='float')
         in_rem = _dark_input(text=format_num_simple(roll.get('remain', '0')) if not is_new else "", hint_text="сколько осталось", input_type='number', input_filter='float')
-        in_add = _dark_input(hint_text="0", input_type='number', input_filter='float')
+        in_add = _dark_input(hint_text="метров", input_type='number', input_filter='float')
         if mode is None:
             _pair(("[b]ВСЕГО, м[/b]", (0.55, 0.6, 0.7, 1), in_tot), ("[b]ОСТАТОК, м[/b]", (0.41, 0.94, 0.68, 1), in_rem))
             _pair(("[b]ШИРИНА, м[/b]", (0.4, 0.8, 1, 1), in_w), ("[b]СПИСАТЬ РАСХОД[/b]", (1.0, 0.72, 0.3, 1), in_use))
