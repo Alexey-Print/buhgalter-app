@@ -1713,6 +1713,20 @@ class ClientsScreen(Screen):
                 return (0, 0)
         if not months:
             grid.add_widget(self._gr_auto_label("[color=#7A8494]Пока нет заказов[/color]", font='15sp'))
+        else:                                   # за всё время: сколько заказал каждый клиент
+            all_c, all_rev, all_pr, all_n = {}, 0.0, 0.0, 0
+            for bk in months.values():
+                all_rev += bk['revenue']; all_pr += bk['profit']; all_n += bk['orders']
+                for k, v in bk['clients'].items():
+                    all_c[k] = all_c.get(k, 0.0) + v
+            lines = ["[b][size=18sp]ЗА ВСЁ ВРЕМЯ[/size][/b]",
+                     f"[color=#AAB4C8]заказов на:[/color] [b]{rub(all_rev)} р[/b]  [color=#7F8A99]({all_n})[/color]",
+                     f"[color=#AAB4C8]прибыль:[/color] [b][color=#8FE6B0]{rub(all_pr)} р[/color][/b]",
+                     "[color=#AAB4C8]клиенты заказали:[/color]"]
+            for k, v in sorted(all_c.items(), key=lambda kv: -kv[1]):
+                lines.append(f"   {escape_markup(k)} — [b]{rub(v)} р[/b]")
+            grid.add_widget(self._gr_panel([self._gr_auto_label("\n".join(lines), font='15sp', color=GR_TEXT,
+                                                                halign='left')], pad=10))
         for mk in sorted(months, key=_key, reverse=True):
             bk = months[mk]
             try:
