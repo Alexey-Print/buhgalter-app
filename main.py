@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.23"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.24"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3510,14 +3510,13 @@ class ClientsScreen(Screen):
                 rem = format_num_simple(roll.get('remain', '0'))
                 tot = format_num_simple(roll.get('total', '0'))
                 _rcol = '#FF6B6B' if safe_float(roll.get('remain')) < 0 else '#5FD39B'
-                text = f"[b][color=#FFFFFF]{disp}[/color][/b]  [color=#9A9A9A]{w} м[/color]   [b][color={_rcol}]{rem} м[/color][/b] [color=#7A8494]/ {tot}[/color]"
+                text = f"[b][color=#FFFFFF]{disp}[/color][/b]   [b][color={_rcol}]{rem} м[/color][/b]"
                 r = QuickDebtRow(name="", amount_text="", accent=accent)
                 r.clear_widgets()
-                lbl = Label(text=text, markup=True, font_size='20sp', halign='left', valign='middle')
+                lbl = Label(text=text, markup=True, font_size='26sp', halign='left', valign='middle')
                 lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
                 # одна строка: цвет рулона не уезжает за край при длинных цифрах
-                self._fit_font(lbl, max_sp=20, min_sp=12,
-                               fallback=f"[b][color=#FFFFFF]{disp}[/color][/b]  [b][color={_rcol}]{rem} м[/color][/b] [color=#7A8494]/ {tot}[/color]")
+                self._fit_font(lbl, max_sp=26, min_sp=14, plain=True)
                 r.add_widget(lbl)
                 r.bind(on_release=lambda x, i=ri: self._roll_card(i, pop))
                 grid.add_widget(r)
@@ -3763,9 +3762,10 @@ class ClientsScreen(Screen):
         b_ = {'списано': l_ + m_, 'добавлено': l_ - m_}.get(e.get('kind'))
         bt = f"{format_num_simple(round(b_, 2))} » " if b_ is not None else ""
         who = escape_markup(str(e.get('who', '') or e.get('note', '') or '').strip())
-        return (f"{str(e.get('date', ''))[:8]}  [color={col}]{e.get('kind', '')} {sign}{format_num_simple(e.get('m', 0))} м[/color]"
-                f"  [b][color=#E3E9F2]{bt}{format_num_simple(e.get('left', 0))}[/color][/b]"
-                + (f"\n   [color=#AAB4C8]{who}[/color]" if who else ""))
+        _lc = '#FF6B6B' if l_ < 0 else '#5FD39B'
+        return (f"[color=#AAB4C8]{str(e.get('date', ''))[:8]}[/color]  [b][color={col}]{e.get('kind', '')} {sign}{format_num_simple(e.get('m', 0))} м[/color][/b]"
+                + (f"\n[color=#E3E9F2]{who}[/color]" if who else "")
+                + f"\n[size=22sp][b]остаток: [color={_lc}]{format_num_simple(e.get('left', 0))} м[/color][/b][/size]")
 
     def _roll_history_popup(self, ri, back_cb=None):
         app = App.get_running_app()
@@ -3776,7 +3776,7 @@ class ClientsScreen(Screen):
         content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
         pop = TopMenuPopup(title=f"ИСТОРИЯ: {disp}", content=content, size_hint=(0.96, 0.92))
         pop.background_color = GR_BG
-        content.add_widget(self._gr_auto_label("[color=#7F8A99]было » осталось, м. Сверху — последние.[/color]", font='13sp'))
+        content.add_widget(self._gr_auto_label("[color=#7F8A99]Сверху — последние[/color]", font='14sp'))
         scroll = ScrollView()
         grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
         grid.bind(minimum_height=grid.setter('height'))
@@ -3786,7 +3786,7 @@ class ClientsScreen(Screen):
         if not ents:
             grid.add_widget(self._gr_auto_label("[color=#7F8A99]пока пусто[/color]", font='15sp'))
         for e in reversed(ents[-80:]):
-            grid.add_widget(self._gr_panel([self._gr_auto_label(self._roll_history_line(e), font='15sp', color=GR_TEXT,
+            grid.add_widget(self._gr_panel([self._gr_auto_label(self._roll_history_line(e), font='18sp', color=GR_TEXT,
                                                                 halign='left')], pad=6))
         content.add_widget(self.get_bottom_buttons(pop, back_cb, cancel_text="ЗАКРЫТЬ"))
         pop.open()
