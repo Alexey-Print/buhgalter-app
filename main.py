@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.14"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.15"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1274,8 +1274,9 @@ class ClientsScreen(Screen):
         top_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=192, spacing=8, padding=[40, 0, 40, 0])
         b_add = NeonIconButton(icon='plus', label='ДОБАВИТЬ\nКЛИЕНТА', glow=(0.1, 0.78, 0.83))
         b_add.bind(on_release=self.show_add_popup)
-        b_rep = NeonIconButton(icon='grid', label='ОТЧЕТЫ', glow=(0.91, 0.64, 0.1))
-        b_rep.bind(on_release=self.show_reports_stub)
+        # «ОТЧЕТЫ» заменены статистикой по месяцам (окно отчёта в коде осталось)
+        b_rep = NeonIconButton(icon='grid', label='СТАТИСТИКА\nПО МЕСЯЦАМ', glow=(0.91, 0.64, 0.1))
+        b_rep.bind(on_release=lambda *a: self.show_month_stats())
         b_zak = NeonIconButton(icon='cart', label='ЗАКУПКА\nБАНЕРОВ', glow=(0.69, 0.3, 0.88))
         b_zak.bind(on_release=self.show_zakupka_menu)
         top_box.add_widget(b_add)
@@ -2010,12 +2011,7 @@ class ClientsScreen(Screen):
         r2.add_widget(pedit)
         card.add_widget(r2)
         # Вместо «ТЕКУЩЕЙ» (Алексей её не обнуляет) — статистика по месяцам. Окна текущей в коде остались.
-        r3 = BoxLayout(size_hint_y=None, height=_sp(34), spacing=6)
-        st_btn = RoundedButton(text="СТАТИСТИКА ПО МЕСЯЦАМ", bg_color=(0.16, 0.36, 0.55, 1), bold=True,
-                               font_size='14sp', radius=16)
-        st_btn.bind(on_release=lambda x: self.show_month_stats())
-        r3.add_widget(st_btn)
-        card.add_widget(r3)
+        # Кнопка статистики теперь вверху (вместо «ОТЧЕТЫ»)
         return card
 
     # ── Общие детали окон прибыли (размеры от шрифта телефона — ничего не наезжает) ──
