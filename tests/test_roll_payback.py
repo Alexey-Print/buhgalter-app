@@ -407,6 +407,14 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(st[mk]['m2'], {'белый': 6})
         self.assertEqual(st[mk]['clients'], {'САША': 1200})
         self.screen.show_month_stats()
+        self.assertEqual(self.screen.client_ordered_total(self.sasha), (1200, 1200))
+        self.sasha['ordered_adj'] = 800                                   # правка
+        self.assertEqual(self.screen.client_ordered_total(self.sasha)[0], 2000)
+        from datetime import datetime, timedelta
+        self.sasha['ordered_since'] = (datetime.now() + timedelta(minutes=2)).strftime('%d.%m.%y %H:%M')
+        self.sasha['ordered_adj'] = 0                                     # обнулено — старые заказы не считаются
+        self.assertEqual(self.screen.client_ordered_total(self.sasha), (0, 0))
+        self.screen.show_month_stats()
 
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)

@@ -1693,6 +1693,79 @@ class ClientsScreen(Screen):
                 bucket(mk)['profit'] += safe_float(p_.get('profit'))
         return months
 
+    def client_ordered_total(self, c):
+        """Сколько клиент заказал за всё время: заказы после обнуления (ordered_since) + ручная правка (ordered_adj)."""
+        since = None
+        if c.get('ordered_since'):
+            try:
+                since = datetime.strptime(c['ordered_since'], '%d.%m.%y %H:%M')
+            except ValueError:
+                since = None
+        total = 0.0
+        for h in c.get('history', []) + c.get('archived_history', []):
+            if h.get('source_oid'):
+                continue
+            if since is not None:
+                try:
+                    if datetime.strptime(str(h.get('date', ''))[:14], '%d.%m.%y %H:%M') < since:
+                        continue
+                except ValueError:
+                    pass
+            total += safe_float(h.get('sum'))
+        return round(total + safe_float(c.get('ordered_adj')), 2), round(total, 2)
+
+    def _edit_client_total(self, c, stats_pop):
+        app = App.get_running_app()
+        shown, auto = self.client_ordered_total(c)
+        box = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        fp = TopMenuPopup(title=f"ЗАКАЗАЛ ВСЕГО: {str(c.get('name', '')).upper()}", content=box, size_hint=(0.94, 0.7))
+        fp.background_color = GR_BG
+        since = c.get('ordered_since')
+        box.add_widget(self._gr_auto_label(
+            (f"Считается с {since[:8]} (обнулено).\n" if since else "") +
+            f"По заказам: {rub(auto)} р" + (f", правка {'+' if safe_float(c.get('ordered_adj')) > 0 else '−'}"
+                                         f"{rub(abs(safe_float(c.get('ordered_adj'))))} р" if safe_float(c.get('ordered_adj')) else ""),
+            font='14sp', color=(0.62, 0.67, 0.74, 1)))
+        box.add_widget(self._gr_auto_label("[b]ЗАКАЗАЛ ВСЕГО, руб[/b]", font='14sp'))
+        inp = self._gr_input(font='26sp', text=format_num_simple(shown))
+        box.add_widget(inp)
+
+        def _apply(adj=None, since_now=False):
+            if getattr(fp, 'is_dismissing_flag', False):
+                return
+            fp.is_dismissing_flag = True
+            snap = snapshot(app)
+            if since_now:
+                c['ordered_since'] = datetime.now().strftime('%d.%m.%y %H:%M')
+                c['ordered_adj'] = 0
+            else:
+                c['ordered_adj'] = round(adj, 2)
+            ok, message = commit(app, snap, 'заказал всего: правка')
+            if not ok:
+                fp.is_dismissing_flag = False
+                self._stub_popup('КЛИЕНТ', message)
+                return
+            fp.dismiss()
+            stats_pop.dismiss()
+            self.show_month_stats()
+        b_save = RoundedButton(text="СОХРАНИТЬ", bg_color=GR_ACCENT, size_hint_y=None, height=_sp(48),
+                               bold=True, font_size='17sp', radius=GR_RADIUS)
+        b_save.bind(on_release=lambda x: _apply(adj=safe_float(inp.text) - auto))
+        row = BoxLayout(orientation='horizontal', spacing=_sp(6), size_hint_y=None, height=_sp(46))
+        b_zero = RoundedButton(text="ОБНУЛИТЬ", bg_color=(0.45, 0.17, 0.17, 1), border_color=GR_BORDER,
+                               bold=True, font_size='14sp', radius=GR_RADIUS)
+        b_zero.bind(on_release=lambda x: _apply(since_now=True))
+        b_auto = RoundedButton(text="КАК ПО ЗАКАЗАМ", bg_color=GR_PANEL, border_color=GR_BORDER,
+                               bold=True, font_size='14sp', radius=GR_RADIUS)
+        b_auto.bind(on_release=lambda x: _apply(adj=0.0))
+        row.add_widget(b_zero)
+        row.add_widget(b_auto)
+        box.add_widget(b_save)
+        box.add_widget(row)
+        box.add_widget(Widget())
+        box.add_widget(self.get_bottom_buttons(fp, cancel_text="ЗАКРЫТЬ"))
+        fp.open()
+
     def show_month_stats(self):
         months = self.month_stats()
         mnames = ['', 'ЯНВАРЬ', 'ФЕВРАЛЬ', 'МАРТ', 'АПРЕЛЬ', 'МАЙ', 'ИЮНЬ', 'ИЮЛЬ', 'АВГУСТ', 'СЕНТЯБРЬ',
@@ -1722,11 +1795,37 @@ class ClientsScreen(Screen):
             lines = ["[b][size=18sp]ЗА ВСЁ ВРЕМЯ[/size][/b]",
                      f"[color=#AAB4C8]заказов на:[/color] [b]{rub(all_rev)} р[/b]  [color=#7F8A99]({all_n})[/color]",
                      f"[color=#AAB4C8]прибыль:[/color] [b][color=#8FE6B0]{rub(all_pr)} р[/color][/b]",
-                     "[color=#AAB4C8]клиенты заказали:[/color]"]
-            for k, v in sorted(all_c.items(), key=lambda kv: -kv[1]):
-                lines.append(f"   {escape_markup(k)} — [b]{rub(v)} р[/b]")
+                     "[color=#AAB4C8]клиенты заказали (карандаш — исправить / обнулить):[/color]"]
             grid.add_widget(self._gr_panel([self._gr_auto_label("\n".join(lines), font='15sp', color=GR_TEXT,
                                                                 halign='left')], pad=10))
+            app_ = App.get_running_app()
+            rows = []
+            for c in app_.clients:
+                if c.get('is_creditor') or c.get('role') or c in [app_.clients[i] for i in app_.special_set()]:
+                    continue
+                shown, _auto = self.client_ordered_total(c)
+                if shown == 0 and not c.get('ordered_since') and not c.get('history') and not c.get('archived_history'):
+                    continue
+                rows.append((shown, c))
+            for shown, c in sorted(rows, key=lambda t: -t[0]):
+                mark = ''
+                if c.get('ordered_since'):
+                    mark += f"  [color=#7F8A99]с {c['ordered_since'][:5]}[/color]"
+                if safe_float(c.get('ordered_adj')):
+                    mark += "  [color=#7F8A99](испр.)[/color]"
+                lbl = self._gr_auto_label(f"{escape_markup(str(c.get('name', '')))} — [b]{rub(shown)} р[/b]{mark}",
+                                          font='15sp', color=GR_TEXT, halign='left')
+                eb = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, None),
+                                width=_sp(42), height=_sp(36), radius=GR_RADIUS)
+                eb.bind(on_release=lambda x, cc=c: self._edit_client_total(cc, pop))
+                row = BoxLayout(orientation='horizontal', spacing=_sp(6), size_hint_y=None, height=_sp(42))
+                box_ = self._gr_panel([lbl], pad=6)
+                row.add_widget(box_)
+                hold = AnchorLayout(size_hint_x=None, width=_sp(42), anchor_y='center')
+                hold.add_widget(eb)
+                row.add_widget(hold)
+                box_.bind(height=lambda w, h, r=row: setattr(r, 'height', max(h, _sp(40))))
+                grid.add_widget(row)
         for mk in sorted(months, key=_key, reverse=True):
             bk = months[mk]
             try:
