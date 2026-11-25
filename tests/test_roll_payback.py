@@ -69,6 +69,7 @@ class RollPaybackTests(unittest.TestCase):
                                                 order_desc='2x2 x1шт'))
         self.assertEqual(self.app.order_material_cost(self.sasha['history'][-1]), 329.28)
         self.assertEqual(self.app.profit_percent(), round((800 - 220 - 329.28) / (220 + 329.28) * 100))   # 46%
+        self.assertEqual(self.screen.client_fair_profit(self.sasha), round(800 - 220 - 329.28, 2))     # честно по клиенту
 
     def plenka(self):
         return self.app.clients[self.app.plenka_index()]

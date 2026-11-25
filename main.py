@@ -1738,6 +1738,18 @@ class ClientsScreen(Screen):
             total += safe_float(h.get('sum'))
         return round(total + safe_float(c.get('ordered_adj')), 2), round(total, 2)
 
+    def client_fair_profit(self, c):
+        """Честная прибыль по клиенту: по каждому заказу сумма − исполнителю − материал (с обрезками),
+        не зависит от того, чей заказ попал на окупаемость рулона. С момента «с нуля»."""
+        app = App.get_running_app()
+        since = self._stats_since()
+        total = 0.0
+        for h in c.get('history', []) + c.get('archived_history', []):
+            if h.get('source_oid') or not self._after(h.get('date'), since):
+                continue
+            total += safe_float(h.get('sum')) - safe_float(h.get('print_cost')) - app.order_material_cost(h)
+        return round(total, 2)
+
     def _edit_client_total(self, c, stats_pop):
         app = App.get_running_app()
         shown, auto = self.client_ordered_total(c)
@@ -1818,8 +1830,8 @@ class ClientsScreen(Screen):
                     all_c[k] = all_c.get(k, 0.0) + v
             lines = ["[b][size=18sp]ЗА ВСЁ ВРЕМЯ[/size][/b]",
                      f"[color=#AAB4C8]заказов на:[/color] [b]{rub(all_rev)} р[/b]  [color=#7F8A99]({all_n})[/color]",
-                     f"[color=#AAB4C8]прибыль:[/color] [b][color=#8FE6B0]{rub(all_pr)} р[/color][/b]",
-                     "[color=#AAB4C8]клиенты заказали (карандаш — исправить / обнулить):[/color]"]
+                     f"[color=#AAB4C8]прибыль (с окупаемостью рулона):[/color] [b][color=#8FE6B0]{rub(all_pr)} р[/color][/b]",
+                     "[color=#AAB4C8]по клиентам «прибыль ≈» = заказ − Олегу − материал с обрезками[/color]"]
             grid.add_widget(self._gr_panel([self._gr_auto_label("\n".join(lines), font='15sp', color=GR_TEXT,
                                                                 halign='left')], pad=10))
             app_ = App.get_running_app()
@@ -1837,7 +1849,10 @@ class ClientsScreen(Screen):
                     mark += f"  [color=#7F8A99]с {c['ordered_since'][:5]}[/color]"
                 if safe_float(c.get('ordered_adj')):
                     mark += "  [color=#7F8A99](испр.)[/color]"
-                lbl = self._gr_auto_label(f"{escape_markup(str(c.get('name', '')))} — [b]{rub(shown)} р[/b]{mark}",
+                fp_ = self.client_fair_profit(c)
+                lbl = self._gr_auto_label(f"{escape_markup(str(c.get('name', '')))} — [b]{rub(shown)} р[/b]{mark}\n"
+                                          f"[color=#AAB4C8]прибыль ≈[/color] [b][color={'#8FE6B0' if fp_ >= 0 else '#FF6B6B'}]"
+                                          f"{'-' if fp_ < 0 else ''}{rub(abs(fp_))} р[/color][/b]",
                                           font='15sp', color=GR_TEXT, halign='left')
                 eb = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, None),
                                 width=_sp(42), height=_sp(36), radius=GR_RADIUS)
