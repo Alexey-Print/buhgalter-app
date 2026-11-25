@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.11"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.12"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1935,12 +1935,12 @@ class ClientsScreen(Screen):
 
     def _two_line_label(self, caption, value):
         """Сверху мелко серым — что это, снизу крупно — сумма."""
-        box = BoxLayout(orientation='vertical', padding=[0, _sp(3), 0, _sp(3)])
-        cap = Label(text=f"[b]{caption}[/b]", markup=True, font_size='12sp', color=(0.7, 0.75, 0.82, 1),
-                    halign='center', valign='middle', size_hint_y=0.38)
+        box = BoxLayout(orientation='vertical', padding=[0, _sp(2), 0, _sp(2)])
+        cap = Label(text=f"[b]{caption}[/b]", markup=True, font_size='10sp', color=(0.7, 0.75, 0.82, 1),
+                    halign='center', valign='middle', size_hint_y=0.4)
         cap.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
-        self._fit_font(cap, max_sp=14, min_sp=9)
-        val = Label(text=value, markup=True, font_size='28sp', halign='center', valign='middle', size_hint_y=0.62)
+        self._fit_font(cap, max_sp=11, min_sp=8)
+        val = Label(text=value, markup=True, font_size='18sp', halign='center', valign='middle', size_hint_y=0.6)
         box.add_widget(cap)
         box.add_widget(val)
         return box
@@ -1949,13 +1949,13 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         tot_debt, my_debt, _, profit_val = app.get_totals()
         card = self._make_section("ОБЩИЕ ИТОГИ", (0.5, 0.81, 0.6, 1), (0.5, 0.81, 0.6, 1), hdr_text=(0.05, 0.23, 0.11, 1))
-        r1 = BoxLayout(size_hint_y=None, height=_sp(62))
+        r1 = BoxLayout(size_hint_y=None, height=_sp(40))
         l1 = self._two_line_label("МНЕ ДОЛЖНЫ КЛИЕНТЫ", f"[b][color=#FFFFFF]{rub(tot_debt)} р[/color][/b]")
         l1.bind(pos=lambda *a: self._draw_tap_bg(l1),
                 size=lambda *a: self._draw_tap_bg(l1))
         r1.add_widget(l1)
         card.add_widget(r1)
-        r2 = BoxLayout(size_hint_y=None, height=_sp(62), spacing=6)
+        r2 = BoxLayout(size_hint_y=None, height=_sp(40), spacing=6)
         # две строки: сверху мелко — что это, снизу крупно — сумма
         if profit_val >= 0:
             ptxt = f"[b][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
@@ -1972,16 +1972,16 @@ class ClientsScreen(Screen):
                     state=lambda *a: self._draw_tap_bg(pclick))
         pedit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, 1), width=150, radius=16)
         pedit.bind(on_release=lambda x: self.show_profit_correction_popup())
-        phist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=130, radius=16, font_size='18sp', bold=True)
+        phist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=130, radius=16, font_size='15sp', bold=True)
         phist.bind(on_release=lambda x: self.show_profit_history_popup())
         r2.add_widget(pclick)
         r2.add_widget(phist)
         r2.add_widget(pedit)
         card.add_widget(r2)
         # Вместо «ТЕКУЩЕЙ» (Алексей её не обнуляет) — статистика по месяцам. Окна текущей в коде остались.
-        r3 = BoxLayout(size_hint_y=None, height=_sp(46), spacing=6)
+        r3 = BoxLayout(size_hint_y=None, height=_sp(34), spacing=6)
         st_btn = RoundedButton(text="СТАТИСТИКА ПО МЕСЯЦАМ", bg_color=(0.16, 0.36, 0.55, 1), bold=True,
-                               font_size='17sp', radius=16)
+                               font_size='14sp', radius=16)
         st_btn.bind(on_release=lambda x: self.show_month_stats())
         r3.add_widget(st_btn)
         card.add_widget(r3)
@@ -3240,11 +3240,19 @@ class ClientsScreen(Screen):
             pop.is_dismissing_flag = True
             snap = snapshot(app)
             _old_taken = (getattr(app, 'profit_taken', '0'), list(getattr(app, 'profit_takes', []) or []))
-            app.profit_correction = str(round(val - tot_debt, 2))
-            if abs(val) < 0.005:   # общая обнулена — текущая тоже с нуля
+            _extra = getattr(app, '_extra_data', None)
+            if _extra is None:
+                _extra = app._extra_data = {}
+            _old_extra = dict(_extra)
+            if abs(val) < 0.005:   # общая обнулена — текущая, наценка и статистика тоже с нуля (как «НАЧАТЬ С НУЛЯ»)
                 app.profit_taken, app.profit_takes = '0', []
+                _extra['stats_removed_profit'] = round(safe_float(_extra.get('stats_removed_profit'))
+                                                       + app.get_totals()[3], 2)
+                _extra['stats_since'] = datetime.now().strftime('%d.%m.%y %H:%M:%S')
+            app.profit_correction = str(round(val - tot_debt, 2))
             ok, message = commit(app, snap, 'правка прибыли')
             if not ok:
+                _extra.clear(); _extra.update(_old_extra)
                 app.profit_taken, app.profit_takes = _old_taken
                 pop.is_dismissing_flag = False
                 self._stub_popup('ПРИБЫЛЬ', message)

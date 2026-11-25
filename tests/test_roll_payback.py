@@ -428,6 +428,28 @@ class RollPaybackTests(unittest.TestCase):
         self.assertEqual(self.profit(), 1000)
         self.assertTrue(self.screen.month_stats())
 
+    def test_pencil_zero_resets_markup(self):
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
+        main.ensure_ids(self.app.clients)
+        self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_white', order_desc='1x1 x1шт',
+                                                print_cost=300, via_malevich=True, creditor_idx=len(self.app.clients) - 1))
+        self.assertIsNotNone(self.app.profit_percent())
+        made = []
+        orig = main.RoundedButton.__init__
+
+        def rec(btn, **kw):
+            orig(btn, **kw); made.append(btn)
+        main.RoundedButton.__init__ = rec
+        try:
+            self.screen.show_profit_correction_popup()
+            [b for b in made if b.text == 'ОБНУЛИТЬ ПРИБЫЛЬ'][-1].dispatch('on_release')
+        finally:
+            main.RoundedButton.__init__ = orig
+        self.assertEqual(self.profit(), 0)
+        self.assertIsNone(self.app.profit_percent())                     # наценка тоже с нуля
+        self.assertEqual(self.screen.month_stats(), {})
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()
