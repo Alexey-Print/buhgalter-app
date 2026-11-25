@@ -2817,6 +2817,14 @@ class ClientsScreen(Screen):
                     b_str = f"  [size=11sp][color=#8A8A8A]{badge_val}[/size]" if badge_val else ""
                     m_str = f"  [color=#88CCFF][size=12sp]{format_num_simple(round(item_meters,2))}м²[/size][/color]" if item_meters > 0 else ""
                     desc_text = f"[b]{row_counter}) {raw_desc}[/b]{p_str}  [color=#00FF00]= {sum_val}[/color]{m_str}{b_str}"
+                    # чистая ≈ : заказ − исполнителю − материал с обрезками (для понимания рентабельности)
+                    try:
+                        _net = safe_float(item.get('sum')) - safe_float(item.get('print_cost')) - app.order_material_cost(item)
+                        if not client.get('is_creditor') and not item.get('source_oid'):
+                            desc_text += (f"  [size=12sp][color=#FFD54F]чист. ≈ {'-' if _net < 0 else ''}"
+                                          f"{rub(abs(_net))}[/color][/size]")
+                    except Exception:
+                        pass
                     row_counter += 1
                     row = BoxLayout(size_hint_y=None, height=64, spacing=10, padding=[12, 4, 8, 4])
                     def _draw_row_bg(w, *a):
