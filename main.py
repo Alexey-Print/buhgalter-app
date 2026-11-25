@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.12"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.13"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1957,10 +1957,10 @@ class ClientsScreen(Screen):
         cap = Label(text=f"[b]{caption}[/b]", markup=True, font_size='15sp', color=(0.67, 0.71, 0.78, 1),
                     halign='right', valign='middle', size_hint_x=0.4)
         cap.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
-        self._fit_font(cap, max_sp=17, min_sp=10, plain=True)
+        self._fit_font(cap, max_sp=14, min_sp=9, plain=True)
         val = Label(text=value, markup=True, font_size='28sp', halign='left', valign='middle', size_hint_x=0.6)
         val.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
-        self._fit_font(val, max_sp=34, min_sp=14, plain=True)
+        self._fit_font(val, max_sp=24, min_sp=12, plain=True)
         box.add_widget(cap)
         box.add_widget(val)
         return box
@@ -1981,13 +1981,13 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         tot_debt, my_debt, _, profit_val = app.get_totals()
         card = self._make_section("ОБЩИЕ ИТОГИ", (0.5, 0.81, 0.6, 1), (0.5, 0.81, 0.6, 1), hdr_text=(0.05, 0.23, 0.11, 1))
-        r1 = BoxLayout(size_hint_y=None, height=_sp(52))
+        r1 = BoxLayout(size_hint_y=None, height=_sp(38))
         l1 = self._cap_value_row("МНЕ ДОЛЖНЫ:", f"[b][color=#FFFFFF]{rub(tot_debt)} р[/color][/b]")
         l1.bind(pos=lambda *a: self._draw_tap_bg(l1),
                 size=lambda *a: self._draw_tap_bg(l1))
         r1.add_widget(l1)
         card.add_widget(r1)
-        r2 = BoxLayout(size_hint_y=None, height=_sp(52), spacing=6)
+        r2 = BoxLayout(size_hint_y=None, height=_sp(38), spacing=6)
         # две строки: сверху мелко — что это, снизу крупно — сумма
         if profit_val >= 0:
             ptxt = f"[b][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
