@@ -174,7 +174,7 @@ class AccountingTests(unittest.TestCase):
 
     def test_roundtrip_and_unknown_fields(self):
         order = self.add(amount=672.34, cost=201.22)
-        self.app._extra_data = {'future_key': {'preserve': True}}
+        self.app._extra_data = dict(getattr(self.app, '_extra_data', None) or {}, future_key={'preserve': True})
         self.app.save_data()
         before = copy.deepcopy(self.app.clients)
         other = main.BusinessApp(); other.load_data()

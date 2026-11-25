@@ -1650,30 +1650,37 @@ class ClientsScreen(Screen):
         row.add_widget(edit)
         return row
 
+    def _two_line_label(self, caption, value):
+        """Сверху мелко серым — что это, снизу крупно — сумма."""
+        box = BoxLayout(orientation='vertical', padding=[0, _sp(3), 0, _sp(3)])
+        cap = Label(text=f"[b]{caption}[/b]", markup=True, font_size='12sp', color=(0.7, 0.75, 0.82, 1),
+                    halign='center', valign='middle', size_hint_y=0.38)
+        cap.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        self._fit_font(cap, max_sp=14, min_sp=9)
+        val = Label(text=value, markup=True, font_size='28sp', halign='center', valign='middle', size_hint_y=0.62)
+        box.add_widget(cap)
+        box.add_widget(val)
+        return box
+
     def _build_totals_section(self):
         app = App.get_running_app()
         tot_debt, my_debt, _, profit_val = app.get_totals()
         card = self._make_section("ОБЩИЕ ИТОГИ", (0.5, 0.81, 0.6, 1), (0.5, 0.81, 0.6, 1), hdr_text=(0.05, 0.23, 0.11, 1))
-        r1 = BoxLayout(size_hint_y=None, height=130)
-        l1 = Label(text=f"[b][color=#FFFFFF]ДОЛЖНЫ: [/color][color=#8FE6B0]{rub(tot_debt)} р[/color][/b]",
-                   markup=True, font_size='30sp', halign='center', valign='middle')
-        l1.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(l1, max_sp=46, min_sp=14)
+        r1 = BoxLayout(size_hint_y=None, height=_sp(62))
+        l1 = self._two_line_label("МНЕ ДОЛЖНЫ КЛИЕНТЫ", f"[b][color=#FFFFFF]{rub(tot_debt)} р[/color][/b]")
         l1.bind(pos=lambda *a: self._draw_tap_bg(l1),
                 size=lambda *a: self._draw_tap_bg(l1))
         r1.add_widget(l1)
         card.add_widget(r1)
-        r2 = BoxLayout(size_hint_y=None, height=118, spacing=6)
+        r2 = BoxLayout(size_hint_y=None, height=_sp(62), spacing=6)
+        # две строки: сверху мелко — что это, снизу крупно — сумма
         if profit_val >= 0:
-            ptxt = f"[b][color=#FFFFFF]ОБЩАЯ: [/color][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
+            ptxt = f"[b][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
         else:
-            ptxt = f"[b][color=#FF6B6B]ОБЩАЯ: -{rub(abs(profit_val))} р[/color][/b]"
+            ptxt = f"[b][color=#FF6B6B]-{rub(abs(profit_val))} р[/color][/b]"
         _pct = app.profit_percent()
-        if _pct is not None:
-            ptxt += f"  [color=#FFD54F][b]{_pct}%[/b][/color]"
-        pl = Label(text=ptxt, markup=True, font_size='23sp', halign='center', valign='middle')
-        pl.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(pl, max_sp=38, min_sp=12)
+        pcap = "ПРИБЫЛЬ ЗА ВСЁ ВРЕМЯ" + (f"  ·  [color=#FFD54F]наценка {_pct}%[/color]" if _pct is not None else "")
+        pl = self._two_line_label(pcap, ptxt)
         pclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
         pclick.add_widget(pl)
         pclick.bind(on_release=lambda x: self.show_profit_correction_popup())
@@ -1690,16 +1697,14 @@ class ClientsScreen(Screen):
         card.add_widget(r2)
         # текущая прибыль: уменьшается, когда «ОТДАЛ»; общая остаётся
         cur = app.current_profit()
-        r3 = BoxLayout(size_hint_y=None, height=118, spacing=6)
+        r3 = BoxLayout(size_hint_y=None, height=_sp(62), spacing=6)
         _since = app.current_since()
-        _cur_title = f"ТЕКУЩАЯ с {_since[:5]}" if _since else "ТЕКУЩАЯ"
+        ccap = f"ТЕКУЩАЯ — с обнуления {_since[:5]}" if _since else "ТЕКУЩАЯ"
         if cur >= 0:
-            ctxt = f"[b][color=#FFFFFF]{_cur_title}: [/color][color=#5FD3FF]{rub(cur)} р[/color][/b]"
+            ctxt = f"[b][color=#5FD3FF]{rub(cur)} р[/color][/b]"
         else:
-            ctxt = f"[b][color=#FF6B6B]{_cur_title}: -{rub(abs(cur))} р[/color][/b]"
-        cl = Label(text=ctxt, markup=True, font_size='23sp', halign='center', valign='middle')
-        cl.bind(size=lambda s, v: setattr(s, 'text_size', v))
-        self._fit_font(cl, max_sp=38, min_sp=12)
+            ctxt = f"[b][color=#FF6B6B]-{rub(abs(cur))} р[/color][/b]"
+        cl = self._two_line_label(ccap, ctxt)
         cclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
         cclick.add_widget(cl)
         cclick.bind(on_release=lambda x: self.show_current_profit_popup())
@@ -5729,6 +5734,10 @@ class BusinessApp(App):
             if r.get('color') == 'black' and not safe_float(r.get('price_m2')):
                 w = safe_float(r.get('width')) or 3.2
                 r['price_m2'] = round(11760 / (75 * w), 2)
+                break
+        for r in getattr(self, 'rolls', None) or []:       # белый — 45 ₽/м² (со слов Алексея, 25.11)
+            if r.get('color') == 'white' and not safe_float(r.get('price_m2')):
+                r['price_m2'] = 45.0
                 break
         extra['price_m2_2311'] = True
 
