@@ -306,9 +306,10 @@ def pack_length(pieces, roll_w=3.2, max_pieces=400, margin=0.05):
     return round(total, 2)
 
 
-def roll_length(a, b, qty=1, roll_w=3.2):
-    """Метры рулона на один вид банера (штуки раскладываются по несколько в ряд)."""
-    return pack_length([(a, b, qty)], roll_w)
+def roll_length(a, b, qty=1, roll_w=3.2, margin=0.05):
+    """Метры рулона на один вид банера (штуки раскладываются по несколько в ряд).
+    margin=0 — по чистому размеру (для чистой прибыли: как считают Олег и клиент)."""
+    return pack_length([(a, b, qty)], roll_w, margin=margin)
 
 
 _SIZE_RE = None

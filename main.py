@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.16"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.17"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -5867,18 +5867,19 @@ class BusinessApp(App):
         return 0.0
 
     def order_material_cost(self, h):
-        """Материал заказа с обрезками: метры рулона × ширина рулона × цена за м²."""
+        """Материал заказа для чистой прибыли: длина по чистому размеру (без полей) × вся ширина рулона
+        (обрезок по ширине идёт в мусор) × цена за м². Рулон при этом списывается с полями, как раньше."""
         color = order_roll_color(h)
         if color is None:
             return 0.0
         roll = next((r for r in getattr(self, 'rolls', None) or [] if r.get('color', 'white') == color), None)
         width = safe_float(roll.get('width')) if roll else 0.0
         width = width or 3.2
-        if 'roll_m' in h:
+        sz = parse_size(h.get('desc'))
+        if sz:
+            meters = roll_length(sz[0], sz[1], sz[2], width, margin=0)
+        else:                                   # размера нет — по списанным метрам
             meters = safe_float(h.get('roll_m'))
-        else:                                   # старые заказы — оценка по размерам
-            sz = parse_size(h.get('desc'))
-            meters = roll_length(sz[0], sz[1], sz[2], width) if sz else 0.0
         return round(meters * width * self.material_price_m2(color), 2)
 
     def profit_percent(self):

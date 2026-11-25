@@ -63,13 +63,20 @@ class RollPaybackTests(unittest.TestCase):
         self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
         main.ensure_ids(self.app.clients)
         idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
-        # 2×2 по 200: клиенту 800, Олегу 55×4 = 220, материал 2.1 м × 3.2 × 49 = 329.28 (с обрезком и полями)
+        # 2×2 по 200: клиенту 800, Олегу 55×4 = 220, материал 2 м × 3.2 × 49 = 313.6 (чистый размер + обрезок по ширине)
         self.assertTrue(self.screen._final_save(idx, '800 руб', None, 'banner_black', print_cost=220,
                                                 via_malevich=True, creditor_idx=len(self.app.clients) - 1,
                                                 order_desc='2x2 x1шт'))
-        self.assertEqual(self.app.order_material_cost(self.sasha['history'][-1]), 329.28)
-        self.assertEqual(self.app.profit_percent(), round((800 - 220 - 329.28) / (220 + 329.28) * 100))   # 46%
-        self.assertEqual(self.screen.client_fair_profit(self.sasha), round(800 - 220 - 329.28, 2))     # честно по клиенту
+        self.assertEqual(self.app.order_material_cost(self.sasha['history'][-1]), 313.6)
+        self.assertEqual(self.app.profit_percent(), round((800 - 220 - 313.6) / (220 + 313.6) * 100))   # 46%
+        self.assertEqual(self.screen.client_fair_profit(self.sasha), round(800 - 220 - 313.6, 2))     # честно по клиенту
+
+    def test_net_like_nastya_sheet(self):
+        # листок Алексея: 2×1.5 белый, клиенту 540, Олегу 165, банер 1.5 м × 3.2 × 45 = 216 → чистая 159
+        self.app.rolls = [{'color': 'white', 'width': '3.2', 'total': '75', 'remain': '75', 'price_m2': 45}]
+        h = {'mode': 'banner_white', 'via_malevich': True, 'desc': 'Банер 2x1.5 x1шт', 'sum': '540', 'print_cost': 165}
+        self.assertEqual(self.app.order_material_cost(h), 216.0)
+        self.assertEqual(540 - 165 - self.app.order_material_cost(h), 159.0)
 
     def plenka(self):
         return self.app.clients[self.app.plenka_index()]
