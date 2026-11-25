@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.17"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.18"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1911,7 +1911,7 @@ class ClientsScreen(Screen):
         cp = TopMenuPopup(title="НАЧАТЬ С НУЛЯ?", content=box, size_hint=(0.94, 0.6))
         cp.background_color = GR_BG
         box.add_widget(self._gr_auto_label(
-            "[b]Обнулится:[/b] прибыль за всё время, наценка %,\nстатистика по месяцам и «за всё время» по клиентам.\n"
+            "[b]Обнулится:[/b] прибыль за всё время, процент,\nстатистика по месяцам и «за всё время» по клиентам.\n"
             "[b]Не тронется:[/b] долги, история заказов,\nостатки и минус рулонов.\n"
             "Потом можно вернуть как было.", font='14sp', color=GR_TEXT))
         b_yes = RoundedButton(text="ДА, С НУЛЯ", bg_color=(0.45, 0.17, 0.17, 1), size_hint_y=None, height=_sp(48),
@@ -3315,7 +3315,7 @@ class ClientsScreen(Screen):
             self._gr_auto_label("за всё время", font='14sp'),
             self._gr_auto_label(f"[b][color={col}]{sign}{rub(abs(current_profit))} руб[/color][/b]", font='34sp', color=GR_TEXT),
             self._gr_auto_label(
-                (f"[b][color=#FFD54F]{app.profit_percent()}%[/color][/b] наценка\n(к печати и материалу с обрезками)"
+                (f"[b][color=#FFD54F]{app.profit_percent()}%[/color][/b] чистыми\n(от суммы заказов, за минусом печати и материала)"
                  if app.profit_percent() is not None else "% появится после заказов"), font='15sp', color=GR_TEXT),
             self._gr_auto_label("считается в момент заказа: оплата долга её не меняет. "
                                 "Пока висит минус рулона — заказы сначала гасят его", font='12sp',
@@ -5883,7 +5883,7 @@ class BusinessApp(App):
         return round(meters * width * self.material_price_m2(color), 2)
 
     def profit_percent(self):
-        """Наценка, %: (сумма заказов − исполнителю − материал) ÷ (исполнителю + материал).
+        """Чистая доля, %: (сумма заказов − исполнителю − материал) ÷ сумма заказов.
         Материал — по метрам рулона с полями и обрезками × ширина × цена м² закупки.
         Считается по заказам из истории прибыли. None — считать не из чего."""
         orders = {}
@@ -5912,9 +5912,10 @@ class BusinessApp(App):
                     pass
             revenue += safe_float(h.get('sum'))
             cost += safe_float(h.get('print_cost')) + self.order_material_cost(h)
-        if cost < 1:
+        if cost < 1 or revenue < 1:
             return None
-        return round((revenue - cost) / cost * 100)
+        # Алексей 25.11: «совсем чистые» — какая часть денег клиентов осталась мне (от суммы заказов)
+        return round((revenue - cost) / revenue * 100)
 
     def current_profit(self):
         """Текущая прибыль = общая минус всё, что отдано («ОТДАЛ»). Общая не меняется."""

@@ -68,7 +68,7 @@ class RollPaybackTests(unittest.TestCase):
                                                 via_malevich=True, creditor_idx=len(self.app.clients) - 1,
                                                 order_desc='2x2 x1шт'))
         self.assertEqual(self.app.order_material_cost(self.sasha['history'][-1]), 313.6)
-        self.assertEqual(self.app.profit_percent(), round((800 - 220 - 313.6) / (220 + 313.6) * 100))   # 46%
+        self.assertEqual(self.app.profit_percent(), round((800 - 220 - 313.6) / 800 * 100))   # 33% — от суммы заказа
         self.assertEqual(self.screen.client_fair_profit(self.sasha), round(800 - 220 - 313.6, 2))     # честно по клиенту
 
     def test_net_like_nastya_sheet(self):
