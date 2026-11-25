@@ -1950,7 +1950,10 @@ class ClientsScreen(Screen):
         tot_debt, my_debt, _, profit_val = app.get_totals()
         card = self._make_section("ОБЩИЕ ИТОГИ", (0.5, 0.81, 0.6, 1), (0.5, 0.81, 0.6, 1), hdr_text=(0.05, 0.23, 0.11, 1))
         r1 = BoxLayout(size_hint_y=None, height=_sp(40))
-        l1 = self._two_line_label("МНЕ ДОЛЖНЫ КЛИЕНТЫ", f"[b][color=#FFFFFF]{rub(tot_debt)} р[/color][/b]")
+        l1 = Label(text=f"[b][color=#AAB4C8]МНЕ ДОЛЖНЫ:[/color]  [color=#FFFFFF]{rub(tot_debt)} р[/color][/b]",
+                   markup=True, font_size='20sp', halign='center', valign='middle')
+        l1.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        self._fit_font(l1, max_sp=26, min_sp=12)
         l1.bind(pos=lambda *a: self._draw_tap_bg(l1),
                 size=lambda *a: self._draw_tap_bg(l1))
         r1.add_widget(l1)
@@ -1962,8 +1965,11 @@ class ClientsScreen(Screen):
         else:
             ptxt = f"[b][color=#FF6B6B]-{rub(abs(profit_val))} р[/color][/b]"
         _pct = app.profit_percent()
-        pcap = "ПРИБЫЛЬ ЗА ВСЁ ВРЕМЯ" + (f"  ·  [color=#FFD54F]наценка {_pct}%[/color]" if _pct is not None else "")
-        pl = self._two_line_label(pcap, ptxt)
+        pl = Label(text=f"[b][color=#AAB4C8]ПРИБЫЛЬ:[/color][/b]  {ptxt}"
+                        + (f"  [color=#FFD54F][b]{_pct}%[/b][/color]" if _pct is not None else ""),
+                   markup=True, font_size='20sp', halign='center', valign='middle')
+        pl.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        self._fit_font(pl, max_sp=26, min_sp=12)
         pclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
         pclick.add_widget(pl)
         pclick.bind(on_release=lambda x: self.show_profit_correction_popup())
