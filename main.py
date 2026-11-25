@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.18"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.19"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1831,8 +1831,12 @@ class ClientsScreen(Screen):
                     all_c[k] = all_c.get(k, 0.0) + v
             lines = ["[b][size=18sp]ЗА ВСЁ ВРЕМЯ[/size][/b]",
                      f"[color=#AAB4C8]заказов на:[/color] [b]{rub(all_rev)} р[/b]  [color=#7F8A99]({all_n})[/color]",
-                     f"[color=#AAB4C8]прибыль (с окупаемостью рулона):[/color] [b][color=#8FE6B0]{rub(all_pr)} р[/color][/b]",
-                     "[color=#AAB4C8]по клиентам «прибыль ≈» = заказ − Олегу − материал с обрезками[/color]"]
+                     f"[color=#AAB4C8]прибыль:[/color] [b][color=#8FE6B0]{rub(all_pr)} р[/color][/b]",
+                     "[color=#7F8A99]чистыми и «прибыль ≈» = заказ − печать − материал с обрезком[/color]"]
+            _pct = App.get_running_app().profit_percent()
+            if _pct is not None:
+                lines.insert(3, f"[color=#AAB4C8]чистыми:[/color] [b][color=#FFD54F]{_pct}%[/color][/b]"
+                                f" [color=#7F8A99]от заказов[/color]")
             grid.add_widget(self._gr_panel([self._gr_auto_label("\n".join(lines), font='15sp', color=GR_TEXT,
                                                                 halign='left')], pad=10))
             app_ = App.get_running_app()
@@ -1994,8 +1998,8 @@ class ClientsScreen(Screen):
             ptxt = f"[b][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
         else:
             ptxt = f"[b][color=#FF6B6B]-{rub(abs(profit_val))} р[/color][/b]"
-        _pct = app.profit_percent()
-        pl = self._cap_value_row("ПРИБЫЛЬ:", ptxt + (f"  [color=#FFD54F][b]{_pct}%[/b][/color]" if _pct is not None else ""))
+        # % чистыми — только в «Статистике по месяцам» (на главном одно число: прибыль по окупаемости)
+        pl = self._cap_value_row("ПРИБЫЛЬ:", ptxt)
         pclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
         pclick.add_widget(pl)
         pclick.bind(on_release=lambda x: self.show_profit_correction_popup())
@@ -2260,8 +2264,7 @@ class ClientsScreen(Screen):
         pop.background_color = (0.043, 0.055, 0.08, 1)
         legend = Label(text="", markup=True, font_size='13sp', size_hint_y=None, height=_sp(66), halign='center', valign='middle')
         legend.text = ("[color=#8FE6B0]зелёный — прибыль (свободные деньги)[/color]\n"
-                       "[color=#8FB8FF]синий — ушло на окупаемость рулона[/color]\n"
-                       "[color=#FFD54F]жёлтый — чистая минус материал (для %)[/color]")
+                       "[color=#8FB8FF]синий — ушло на окупаемость рулона[/color]")
         legend.bind(size=lambda s, v: setattr(s, 'text_size', v))
         if not log:
             empty = Label(text="[color=#5A6472]\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0437\u0430\u043f\u0438\u0441\u0435\u0439.\n\u041d\u043e\u0432\u044b\u0435 \u0437\u0430\u043a\u0430\u0437\u044b \u043f\u043e\u044f\u0432\u044f\u0442\u0441\u044f \u0437\u0434\u0435\u0441\u044c.[/color]",
@@ -2331,7 +2334,7 @@ class ClientsScreen(Screen):
                 row.bind(pos=_rb, size=_rb)
                 extra = f"  [size=13sp][color=#8FB8FF]в рулон {rub(to_roll)}[/color][/size]" if to_roll > 0.004 else ''
                 _h = _orders.get(it.get('oid'))
-                if _h is not None and not _old:       # чистая ≈ : заказ − исполнителю − материал с обрезками
+                if False and _h is not None and not _old:   # «чист. ≈» убрано 25.11 (только в статистике) : заказ − исполнителю − материал с обрезками
                     try:
                         _net = safe_float(_h.get('sum')) - safe_float(_h.get('print_cost')) - app.order_material_cost(_h)
                         extra += (f"\n[size=13sp][color=#FFD54F]чист. ≈ {'-' if _net < 0 else ''}"
@@ -2855,7 +2858,7 @@ class ClientsScreen(Screen):
                     # чистая ≈ : заказ − исполнителю − материал с обрезками (для понимания рентабельности)
                     try:
                         _net = safe_float(item.get('sum')) - safe_float(item.get('print_cost')) - app.order_material_cost(item)
-                        if not client.get('is_creditor') and not item.get('source_oid'):
+                        if False and not client.get('is_creditor') and not item.get('source_oid'):   # убрано 25.11
                             desc_text += (f"  [size=12sp][color=#FFD54F]чист. ≈ {'-' if _net < 0 else ''}"
                                           f"{rub(abs(_net))}[/color][/size]")
                     except Exception:
@@ -3314,9 +3317,6 @@ class ClientsScreen(Screen):
         content.add_widget(self._gr_panel([
             self._gr_auto_label("за всё время", font='14sp'),
             self._gr_auto_label(f"[b][color={col}]{sign}{rub(abs(current_profit))} руб[/color][/b]", font='34sp', color=GR_TEXT),
-            self._gr_auto_label(
-                (f"[b][color=#FFD54F]{app.profit_percent()}%[/color][/b] чистыми\n(от суммы заказов, за минусом печати и материала)"
-                 if app.profit_percent() is not None else "% появится после заказов"), font='15sp', color=GR_TEXT),
             self._gr_auto_label("считается в момент заказа: оплата долга её не меняет. "
                                 "Пока висит минус рулона — заказы сначала гасят его", font='12sp',
                                 color=(0.55, 0.6, 0.66, 1))]))
