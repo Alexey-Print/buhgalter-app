@@ -1429,7 +1429,7 @@ class ClientsScreen(Screen):
             Color(g[0], g[1], g[2], 0.95)
             Line(rounded_rectangle=(x + 1, y + 1, wd - 2, h - 2, 12), width=1.8)
 
-    def _fit_font(self, lbl, max_sp=19, min_sp=12, fallback=None):
+    def _fit_font(self, lbl, max_sp=19, min_sp=12, fallback=None, plain=False):
         """Подобрать шрифт под ширину. Текст всегда в одну строку (без переноса, который прятал имя).
         Если не влезает даже мелким шрифтом — показать короткий вариант fallback."""
         from kivy.core.text import Label as CoreLabel
@@ -1440,7 +1440,10 @@ class ClientsScreen(Screen):
         lbl.shorten_from = 'right'
 
         def width_of(text, size):
-            cl = CoreLabel(text=text, font_size=sp(size), markup=True, bold=getattr(lbl, 'bold', False))
+            if plain:      # мерить без меток [b][color]… — иначе строка кажется длиннее и шрифт мельчает
+                import re as _re
+                text = _re.sub(r'\[/?[a-z_]+(=[^\]]*)?\]', '', text)
+            cl = CoreLabel(text=text, font_size=sp(size), markup=True, bold=getattr(lbl, 'bold', False) or plain)
             try:
                 cl.refresh()
                 return cl.texture.size[0]
@@ -1933,6 +1936,20 @@ class ClientsScreen(Screen):
         self.refresh_list()
         self.show_month_stats()
 
+    def _cap_value_row(self, caption, value):
+        """В одну строку: подпись помельче справа, цифра крупно слева от середины; шрифт цифры — по ширине."""
+        box = BoxLayout(orientation='horizontal', spacing=_sp(6), padding=[_sp(4), 0, _sp(4), 0])
+        cap = Label(text=f"[b]{caption}[/b]", markup=True, font_size='15sp', color=(0.67, 0.71, 0.78, 1),
+                    halign='right', valign='middle', size_hint_x=0.4)
+        cap.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        self._fit_font(cap, max_sp=17, min_sp=10, plain=True)
+        val = Label(text=value, markup=True, font_size='28sp', halign='left', valign='middle', size_hint_x=0.6)
+        val.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
+        self._fit_font(val, max_sp=34, min_sp=14, plain=True)
+        box.add_widget(cap)
+        box.add_widget(val)
+        return box
+
     def _two_line_label(self, caption, value):
         """Сверху мелко серым — что это, снизу крупно — сумма."""
         box = BoxLayout(orientation='vertical', padding=[0, _sp(2), 0, _sp(2)])
@@ -1949,27 +1966,20 @@ class ClientsScreen(Screen):
         app = App.get_running_app()
         tot_debt, my_debt, _, profit_val = app.get_totals()
         card = self._make_section("ОБЩИЕ ИТОГИ", (0.5, 0.81, 0.6, 1), (0.5, 0.81, 0.6, 1), hdr_text=(0.05, 0.23, 0.11, 1))
-        r1 = BoxLayout(size_hint_y=None, height=_sp(40))
-        l1 = Label(text=f"[b][color=#AAB4C8]МНЕ ДОЛЖНЫ:[/color]  [color=#FFFFFF]{rub(tot_debt)} р[/color][/b]",
-                   markup=True, font_size='20sp', halign='center', valign='middle')
-        l1.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
-        self._fit_font(l1, max_sp=26, min_sp=12)
+        r1 = BoxLayout(size_hint_y=None, height=_sp(52))
+        l1 = self._cap_value_row("МНЕ ДОЛЖНЫ:", f"[b][color=#FFFFFF]{rub(tot_debt)} р[/color][/b]")
         l1.bind(pos=lambda *a: self._draw_tap_bg(l1),
                 size=lambda *a: self._draw_tap_bg(l1))
         r1.add_widget(l1)
         card.add_widget(r1)
-        r2 = BoxLayout(size_hint_y=None, height=_sp(40), spacing=6)
+        r2 = BoxLayout(size_hint_y=None, height=_sp(52), spacing=6)
         # две строки: сверху мелко — что это, снизу крупно — сумма
         if profit_val >= 0:
             ptxt = f"[b][color=#8FE6B0]{rub(profit_val)} р[/color][/b]"
         else:
             ptxt = f"[b][color=#FF6B6B]-{rub(abs(profit_val))} р[/color][/b]"
         _pct = app.profit_percent()
-        pl = Label(text=f"[b][color=#AAB4C8]ПРИБЫЛЬ:[/color][/b]  {ptxt}"
-                        + (f"  [color=#FFD54F][b]{_pct}%[/b][/color]" if _pct is not None else ""),
-                   markup=True, font_size='20sp', halign='center', valign='middle')
-        pl.bind(size=lambda s_, v: setattr(s_, 'text_size', v))
-        self._fit_font(pl, max_sp=26, min_sp=12)
+        pl = self._cap_value_row("ПРИБЫЛЬ:", ptxt + (f"  [color=#FFD54F][b]{_pct}%[/b][/color]" if _pct is not None else ""))
         pclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
         pclick.add_widget(pl)
         pclick.bind(on_release=lambda x: self.show_profit_correction_popup())
@@ -1978,7 +1988,7 @@ class ClientsScreen(Screen):
                     state=lambda *a: self._draw_tap_bg(pclick))
         pedit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, 1), width=150, radius=16)
         pedit.bind(on_release=lambda x: self.show_profit_correction_popup())
-        phist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=130, radius=16, font_size='15sp', bold=True)
+        phist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=130, radius=16, font_size='18sp', bold=True)
         phist.bind(on_release=lambda x: self.show_profit_history_popup())
         r2.add_widget(pclick)
         r2.add_widget(phist)
