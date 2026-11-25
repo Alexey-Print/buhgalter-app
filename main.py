@@ -1650,6 +1650,93 @@ class ClientsScreen(Screen):
         row.add_widget(edit)
         return row
 
+    def month_stats(self):
+        """Статистика по месяцам: {'11.26': {...}} — заказы, прибыль, м² по материалам, метры рулона, клиенты."""
+        app = App.get_running_app()
+        months = {}
+
+        def m_of(d):
+            d = str(d or '')
+            return d[3:8] if len(d) >= 8 else None
+
+        def bucket(mk):
+            return months.setdefault(mk, {'revenue': 0.0, 'profit': 0.0, 'orders': 0, 'm2': {}, 'roll_m': {},
+                                          'clients': {}})
+        names = {'banner_white': 'белый', 'banner_black': 'чёрный', 'client_material': 'мат. клиента'}
+        for c in app.clients:
+            if c.get('is_creditor'):
+                continue
+            for h in c.get('history', []) + c.get('archived_history', []):
+                if h.get('source_oid'):
+                    continue
+                mk = m_of(h.get('date'))
+                if not mk:
+                    continue
+                bk = bucket(mk)
+                val = safe_float(h.get('sum'))
+                bk['revenue'] += val
+                bk['orders'] += 1
+                nm = str(c.get('name', ''))
+                bk['clients'][nm] = bk['clients'].get(nm, 0.0) + val
+                mode = str(h.get('mode', ''))
+                mat = names.get(mode) or ('плёнка' if 'plenka' in mode else None)
+                sz = parse_size(h.get('desc'))
+                if mat and sz:
+                    bk['m2'][mat] = bk['m2'].get(mat, 0.0) + sz[0] * sz[1] * sz[2]
+                col = order_roll_color(h)
+                if col and safe_float(h.get('roll_m')) > 0:
+                    rn = {'white': 'белый', 'black': 'чёрный', 'plenka': 'плёнка'}[col]
+                    bk['roll_m'][rn] = bk['roll_m'].get(rn, 0.0) + safe_float(h.get('roll_m'))
+        for p_ in getattr(app, 'profit_log', None) or []:
+            mk = m_of(p_.get('date'))
+            if mk:
+                bucket(mk)['profit'] += safe_float(p_.get('profit'))
+        return months
+
+    def show_month_stats(self):
+        months = self.month_stats()
+        mnames = ['', 'ЯНВАРЬ', 'ФЕВРАЛЬ', 'МАРТ', 'АПРЕЛЬ', 'МАЙ', 'ИЮНЬ', 'ИЮЛЬ', 'АВГУСТ', 'СЕНТЯБРЬ',
+                  'ОКТЯБРЬ', 'НОЯБРЬ', 'ДЕКАБРЬ']
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        pop = TopMenuPopup(title="СТАТИСТИКА ПО МЕСЯЦАМ", content=content, size_hint=(0.96, 0.92))
+        pop.background_color = GR_BG
+        scroll = ScrollView()
+        grid = GridLayout(cols=1, spacing=_sp(8), size_hint_y=None, padding=[2, 4, 2, 8])
+        grid.bind(minimum_height=grid.setter('height'))
+        scroll.add_widget(grid)
+        content.add_widget(scroll)
+
+        def _key(mk):
+            try:
+                return (int(mk[3:5]), int(mk[0:2]))
+            except ValueError:
+                return (0, 0)
+        if not months:
+            grid.add_widget(self._gr_auto_label("[color=#7A8494]Пока нет заказов[/color]", font='15sp'))
+        for mk in sorted(months, key=_key, reverse=True):
+            bk = months[mk]
+            try:
+                title = f"{mnames[int(mk[0:2])]} 20{mk[3:5]}"
+            except (ValueError, IndexError):
+                title = mk
+            lines = [f"[b][size=18sp]{title}[/size][/b]",
+                     f"[color=#AAB4C8]заказов на:[/color] [b]{rub(bk['revenue'])} р[/b]  [color=#7F8A99]({bk['orders']})[/color]",
+                     f"[color=#AAB4C8]прибыль:[/color] [b][color=#8FE6B0]{rub(bk['profit'])} р[/color][/b]"]
+            if bk['m2']:
+                lines.append("[color=#AAB4C8]напечатано:[/color] " + ", ".join(
+                    f"{k} [b]{format_num_simple(round(v, 1))}[/b] м²" for k, v in bk['m2'].items()))
+            if bk['roll_m']:
+                lines.append("[color=#AAB4C8]ушло рулона:[/color] " + ", ".join(
+                    f"{k} [b]{format_num_simple(round(v, 1))}[/b] м" for k, v in bk['roll_m'].items()))
+            top = sorted(bk['clients'].items(), key=lambda kv: -kv[1])[:6]
+            if top:
+                lines.append("[color=#AAB4C8]клиенты:[/color] " + ", ".join(
+                    f"{escape_markup(k)} [b]{rub(v)}[/b]" for k, v in top))
+            grid.add_widget(self._gr_panel([self._gr_auto_label("\n".join(lines), font='15sp', color=GR_TEXT,
+                                                                halign='left')], pad=10))
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
+
     def _two_line_label(self, caption, value):
         """Сверху мелко серым — что это, снизу крупно — сумма."""
         box = BoxLayout(orientation='vertical', padding=[0, _sp(3), 0, _sp(3)])
@@ -1695,29 +1782,12 @@ class ClientsScreen(Screen):
         r2.add_widget(phist)
         r2.add_widget(pedit)
         card.add_widget(r2)
-        # текущая прибыль: уменьшается, когда «ОТДАЛ»; общая остаётся
-        cur = app.current_profit()
-        r3 = BoxLayout(size_hint_y=None, height=_sp(62), spacing=6)
-        _since = app.current_since()
-        ccap = f"ТЕКУЩАЯ — с обнуления {_since[:5]}" if _since else "ТЕКУЩАЯ"
-        if cur >= 0:
-            ctxt = f"[b][color=#5FD3FF]{rub(cur)} р[/color][/b]"
-        else:
-            ctxt = f"[b][color=#FF6B6B]-{rub(abs(cur))} р[/color][/b]"
-        cl = self._two_line_label(ccap, ctxt)
-        cclick = ClickBox(orientation='horizontal', padding=[10, 0, 0, 0])
-        cclick.add_widget(cl)
-        cclick.bind(on_release=lambda x: self.show_current_profit_popup())
-        cclick.bind(pos=lambda *a: self._draw_tap_bg(cclick),
-                    size=lambda *a: self._draw_tap_bg(cclick),
-                    state=lambda *a: self._draw_tap_bg(cclick))
-        chist = RoundedButton(text="Ист", bg_color=(0.29, 0.45, 0.78, 1), size_hint=(None, 1), width=130, radius=16, font_size='18sp', bold=True)
-        chist.bind(on_release=lambda x: self.show_current_profit_history())
-        cedit = EditButton(text="", bg_color=(0.72, 0.53, 0.13, 1), size_hint=(None, 1), width=150, radius=16)
-        cedit.bind(on_release=lambda x: self.show_current_profit_popup())
-        r3.add_widget(cclick)
-        r3.add_widget(chist)
-        r3.add_widget(cedit)
+        # Вместо «ТЕКУЩЕЙ» (Алексей её не обнуляет) — статистика по месяцам. Окна текущей в коде остались.
+        r3 = BoxLayout(size_hint_y=None, height=_sp(46), spacing=6)
+        st_btn = RoundedButton(text="СТАТИСТИКА ПО МЕСЯЦАМ", bg_color=(0.16, 0.36, 0.55, 1), bold=True,
+                               font_size='17sp', radius=16)
+        st_btn.bind(on_release=lambda x: self.show_month_stats())
+        r3.add_widget(st_btn)
         card.add_widget(r3)
         return card
 

@@ -398,6 +398,16 @@ class RollPaybackTests(unittest.TestCase):
             self.assertEqual(oleg['debt'], '18 425')
         self.assertTrue(any('ОЛЕГ' in str(j.get('op')) and j.get('cid') == 'o' for j in app.journal))
 
+    def test_month_stats(self):
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.assertTrue(self.screen._final_save(idx, '1 200 руб', None, 'banner_white', order_desc='2x3 x1шт'))
+        st = self.screen.month_stats()
+        mk = self.sasha['history'][-1]['date'][3:8]
+        self.assertEqual(st[mk]['revenue'], 1200)
+        self.assertEqual(st[mk]['m2'], {'белый': 6})
+        self.assertEqual(st[mk]['clients'], {'САША': 1200})
+        self.screen.show_month_stats()
+
     def test_editing_roll_minus_keeps_profit(self):
         self.order(500)
         p0 = self.profit()
