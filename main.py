@@ -1712,7 +1712,7 @@ class ClientsScreen(Screen):
         if since is None:
             return True
         try:
-            return datetime.strptime(str(date_str or '')[:14], '%d.%m.%y %H:%M') >= since
+            return datetime.strptime(str(date_str or '')[:14], '%d.%m.%y %H:%M') > since   # минута обнуления — старое
         except ValueError:
             return True
 
@@ -5870,7 +5870,7 @@ class BusinessApp(App):
                 continue
             if _since is not None:
                 try:
-                    if datetime.strptime(str(p_.get('date', ''))[:14], '%d.%m.%y %H:%M') < _since:
+                    if datetime.strptime(str(p_.get('date', ''))[:14], '%d.%m.%y %H:%M') <= _since:
                         continue
                 except ValueError:
                     pass
