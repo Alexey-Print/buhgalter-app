@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.21"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.22"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3540,7 +3540,7 @@ class ClientsScreen(Screen):
         nav.add_widget(btn_back)
         nav.add_widget(btn_close)
         pop.content.add_widget(scroll)
-        pop.content.add_widget(btn_log)
+        # общая «ИСТОРИЯ СПИСАНИЙ» убрана (25.11): история — у каждого рулона в его карточке
         pop.content.add_widget(btn_add)
         pop.content.add_widget(Widget(size_hint_y=None, height=22))
         pop.content.add_widget(nav)
