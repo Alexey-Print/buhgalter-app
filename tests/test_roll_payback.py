@@ -532,6 +532,31 @@ class RollPaybackTests(unittest.TestCase):
         self.assertIsNone(self.app.profit_percent())                     # наценка тоже с нуля
         self.assertEqual(self.screen.month_stats(), {})
 
+    def test_profit_save_zero_keeps_stats(self):
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
+        main.ensure_ids(self.app.clients)
+        self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_white', order_desc='1x1 x1шт',
+                                                print_cost=300, via_malevich=True, creditor_idx=len(self.app.clients) - 1))
+        since = (self.app._extra_data or {}).get('stats_since')
+        made = []
+        orig = main.RoundedButton.__init__
+
+        def rec(btn, **kw):
+            orig(btn, **kw); made.append(btn)
+        main.RoundedButton.__init__ = rec
+        try:
+            self.screen.show_profit_correction_popup()
+            from kivy.uix.textinput import TextInput
+            save = [b for b in made if b.text == 'СОХРАНИТЬ'][-1]
+            [w for w in save.parent.parent.walk() if isinstance(w, TextInput)][0].text = '0'
+            save.dispatch('on_release')
+        finally:
+            main.RoundedButton.__init__ = orig
+        self.assertEqual(self.profit(), 0)
+        self.assertEqual((self.app._extra_data or {}).get('stats_since'), since)     # статистика не сброшена
+        self.assertNotEqual(self.screen.month_stats(), {})
+
     def test_migration_stats_since_from_journal(self):
         import json
         data = {'clients': [{'name': 'МАЛЕВИЧ', 'debt': '0', 'cid': 'mk', 'is_creditor': True}],

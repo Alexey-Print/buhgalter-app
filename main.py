@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.31"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.32"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3460,7 +3460,7 @@ class ClientsScreen(Screen):
         in_profit = self._gr_input(font='24sp', hint='0', text=format_num_simple(current_profit))
         content.add_widget(in_profit)
 
-        def save_profit(val):
+        def save_profit(val, reset_stats=False):
             if getattr(pop, 'is_dismissing_flag', False): return
             pop.is_dismissing_flag = True
             snap = snapshot(app)
@@ -3469,7 +3469,7 @@ class ClientsScreen(Screen):
             if _extra is None:
                 _extra = app._extra_data = {}
             _old_extra = dict(_extra)
-            if abs(val) < 0.005:   # общая обнулена — текущая, наценка и статистика тоже с нуля (как «НАЧАТЬ С НУЛЯ»)
+            if reset_stats:   # кнопка «ОБНУЛИТЬ ПРИБЫЛЬ» — текущая, наценка и статистика тоже с нуля (как «НАЧАТЬ С НУЛЯ»)
                 app.profit_taken, app.profit_takes = '0', []
                 _extra['stats_removed_profit'] = round(safe_float(_extra.get('stats_removed_profit'))
                                                        + app.get_totals()[3], 2)
@@ -3489,7 +3489,7 @@ class ClientsScreen(Screen):
         btn_save.bind(on_release=lambda x: save_profit(safe_float(in_profit.text)))
         btn_zero = RoundedButton(text="ОБНУЛИТЬ ПРИБЫЛЬ", bg_color=(0.45, 0.17, 0.17, 1), border_color=GR_BORDER,
                                  bold=True, font_size='14sp', radius=GR_RADIUS)
-        btn_zero.bind(on_release=lambda x: save_profit(0.0))
+        btn_zero.bind(on_release=lambda x: save_profit(0.0, reset_stats=True))   # СОХРАНИТЬ с 0 — только исправление суммы
         row.add_widget(btn_save); row.add_widget(btn_zero)
         content.add_widget(row)
         content.add_widget(Widget())
