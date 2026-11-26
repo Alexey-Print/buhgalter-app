@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.30"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.31"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -2161,6 +2161,89 @@ class ClientsScreen(Screen):
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
+    def settlement_cycle(self, client):
+        """Взаиморасчёт с исполнителем с последней оплаты: (дата оплаты или None, баланс после неё,
+        [{'day', 'name', 'm2', 'sum', 'left'}...] — по дням и клиентам, по порядку)."""
+        import re
+        app = App.get_running_app()
+        cid = client.get('cid')
+        jr = [e for e in (getattr(app, 'journal', None) or []) if cid and e.get('cid') == cid
+              and abs(safe_float(e.get('now')) - safe_float(e.get('was'))) > 0.004]
+        start_t, start_bal = None, None
+        for e in jr:                                   # последняя оплата / ручная правка — начало расчёта
+            op = str(e.get('op') or '')
+            if not op.startswith('заказ') and not op.startswith('исправление заказа') and op != 'откат исправления заказа':
+                start_t, start_bal = str(e.get('t', '')), safe_float(e.get('now'))
+
+        def _key(d):                                   # 'дд.мм.гг чч:мм' → сравнимый вид как в журнале
+            d = str(d or '')
+            return f"20{d[6:8]}-{d[3:5]}-{d[0:2]} {d[9:14]}" if len(d) >= 14 else ''
+        items = [h for h in client.get('history', []) if h.get('source_oid')
+                 and (start_t is None or _key(h.get('date')) > start_t[:16])]
+        rows = []
+        for h in items:
+            desc = str(h.get('desc', ''))
+            m = re.search(r'\d', desc)
+            name = desc[:m.start()].strip() if m else desc
+            sz = parse_size(desc)
+            m2 = (sz[0] * sz[1] * sz[2]) if sz else 0.0
+            day = str(h.get('date', ''))[:8]
+            if rows and rows[-1]['day'] == day and rows[-1]['name'] == name:
+                rows[-1]['m2'] += m2
+                rows[-1]['sum'] += safe_float(h.get('sum'))
+            else:
+                rows.append({'day': day, 'name': name, 'm2': m2, 'sum': safe_float(h.get('sum'))})
+        bal_now = safe_float(client.get('debt'))
+        if start_bal is None:                          # оплат ещё не было — от начала заказов
+            start_bal = round(bal_now - sum(r['sum'] for r in rows), 2)
+        left = start_bal
+        for r in rows:
+            left = round(left + r['sum'], 2)
+            r['left'] = left
+        return start_t, start_bal, rows
+
+    def show_settlement(self, client):
+        app = App.get_running_app()
+        if not app:
+            return
+        start_t, start_bal, rows = self.settlement_cycle(client)
+        name = client.get('name', '').upper()
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        pop = TopMenuPopup(title=f"РАСЧЁТ: {name}", content=content, size_hint=(0.96, 0.92))
+        pop.background_color = GR_BG
+
+        def _bal(v):
+            if v < -0.004:
+                return f"[color=#8FE6B0]предоплата {rub(abs(v))} р[/color]"
+            if v > 0.004:
+                return f"[color=#FF8A80]я должен {rub(v)} р[/color]"
+            return "[color=#AAB4C8]в расчёте, 0[/color]"
+        now = safe_float(client.get('debt'))
+        content.add_widget(self._gr_panel([self._gr_auto_label(f"[b]Сейчас: {_bal(now)}[/b]", font="18sp")], pad=8))
+        scroll = ScrollView()
+        grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
+        grid.bind(minimum_height=grid.setter('height'))
+        scroll.add_widget(grid)
+        content.add_widget(scroll)
+        for r in reversed(rows):
+            txt = (f"[color=#AAB4C8]{r['day']}[/color]  [b]{escape_markup(r['name'])}[/b]  "
+                   f"[color=#5FD3FF]{format_num_simple(round(r['m2'], 2))} м²[/color]  [b][color=#FFB74D]{rub(r['sum'])} р[/color][/b]"
+                   f"\n[size=16sp]после: {_bal(r['left'])}[/size]")
+            grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='17sp', color=GR_TEXT, halign='left')], pad=6))
+        if start_t:
+            t = start_t
+            d = f"{t[8:10]}.{t[5:7]}.{t[2:4]}"
+            head = f"[b]{d} оплата[/b] — с неё начался расчёт\n[size=16sp]было: {_bal(start_bal)}[/size]"
+        else:
+            head = f"[b]Начало[/b] (оплат ещё не было)\n[size=16sp]было: {_bal(start_bal)}[/size]"
+        grid.add_widget(self._gr_panel([self._gr_auto_label(head, font='17sp', color=GR_TEXT, halign='left')], pad=6))
+        b_all = RoundedButton(text="ВСЕ ОПЛАТЫ И ПРАВКИ", bg_color=(0.12, 0.45, 0.42, 1), bold=True,
+                              font_size='16sp', radius=GR_RADIUS, size_hint_y=None, height=_sp(46))
+        b_all.bind(on_release=lambda x: self.show_debt_moves(client))
+        content.add_widget(b_all)
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
+
     def show_debt_moves(self, client):
         """Движение долга карточки из журнала: заказы, оплаты («отдал»), ручные правки, взаимозачёт."""
         app = App.get_running_app()
@@ -2797,7 +2880,11 @@ class ClientsScreen(Screen):
 
         btn_moves = RoundedButton(text="ОПЛАТЫ\nПРАВКИ", bg_color=(0.12, 0.45, 0.42, 1),
                                   size_hint=(1, 1), font_size='14sp', bold=True, radius=22)
-        btn_moves.bind(on_release=lambda x: self.show_debt_moves(client))
+        if client.get('is_creditor'):            # исполнителю — взаиморасчёт по заказам с последней оплаты
+            btn_moves.text = "ВЗАИМО-\nРАСЧЁТ"
+            btn_moves.bind(on_release=lambda x: self.show_settlement(client))
+        else:
+            btn_moves.bind(on_release=lambda x: self.show_debt_moves(client))
         btn_all_orders.font_size = '14sp'
         btn_all_orders.text = "ВСЕ\nЗАКАЗЫ"
         btn_clear_hist.font_size = '12sp'

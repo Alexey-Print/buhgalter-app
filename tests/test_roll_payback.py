@@ -148,6 +148,20 @@ class RollPaybackTests(unittest.TestCase):
         self.assertIn('САША, НАСТЯ', self.screen._roll_history_group_text(grp[0]).upper())
         self.screen.show_simple_calc(nastya, 300, mode='banner_black', via_malevich=True, creditor_idx=oleg)
 
+    def test_settlement_with_oleg(self):
+        oleg = {'name': 'ОЛЕГ', 'debt': '-2910', 'is_creditor': True, 'cid': 'OL', 'history': [
+            {'source_oid': 'a', 'date': '20.11.26 10:00', 'desc': 'Саша 2x2 x1шт', 'sum': '220'},     # до оплаты
+            {'source_oid': 'b', 'date': '24.11.26 12:00', 'desc': 'Саша 5x5 x1шт', 'sum': '1375'},
+            {'source_oid': 'c', 'date': '25.11.26 12:00', 'desc': 'Саша 2.6x5 x1шт', 'sum': '715'}]}
+        self.app.clients.append(oleg)
+        self.app.journal = [{'t': '2026-11-21 09:00:00', 'op': 'оплата', 'cid': 'OL', 'was': '220', 'now': '-5000'},
+                            {'t': '2026-11-24 12:00:05', 'op': 'заказ: 5x5', 'cid': 'OL', 'was': '-5000', 'now': '-3625'}]
+        t, bal, rows = self.screen.settlement_cycle(oleg)
+        self.assertEqual(bal, -5000.0)
+        self.assertEqual([(r['day'], r['name'], round(r['m2'], 2), r['sum'], r['left']) for r in rows],
+                         [('24.11.26', 'Саша', 25.0, 1375.0, -3625.0), ('25.11.26', 'Саша', 13.0, 715.0, -2910.0)])
+        self.screen.show_settlement(oleg)
+
     def test_pack_like_corel_2611(self):
         from accounting import pack_length
         it = [(1.384, 3.05, 2), (3.05, 0.55, 2), (2.1, 2.1, 2), (4.55, 0.672, 1), (4.2, 2.6, 1), (3.1, 2.6, 1), (5.3, 1.4, 1)]
