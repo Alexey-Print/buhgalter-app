@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.29"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.30"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -5179,6 +5179,28 @@ class ClientsScreen(Screen):
         _gap = lambda: Widget(size_hint_y=None, height=12)
         for w in (card_client, _gap(), card_mat, _gap(), card_size, _gap(), card_calc, btn_box, extras_row, Widget(size_hint_y=None, height=15), total_box, history_header, history_layout, Widget(size_hint_y=None, height=20), self.get_bottom_buttons(pop, prev_cb, cancel_text="ЗАКРЫТЬ"), Widget(size_hint_y=None, height=350)):
             content.add_widget(w)
+        # клавиатура закрывает низ окна: при вводе размеров место под клавиатурой добавляется
+        # и окно прокручивается так, чтобы размеры были вверху, а ЗАПИСАТЬ В ДОЛГ / ДОБАВИТЬ — видны
+        kb_pad = Widget(size_hint_y=None, height=0)
+        content.add_widget(kb_pad)
+
+        def _kb_focus(inp, val):
+            if val:
+                kb_pad.height = max(getattr(Window, 'keyboard_height', 0) or 0, Window.height * 0.45)
+                def _to_sizes(dt):
+                    try:                          # размеры — к верху окна (вручную: scroll_to здесь не срабатывал)
+                        over = content.height - scroll.height
+                        if over > 0:
+                            from_top = content.height - card_size.top + 10
+                            scroll.scroll_y = max(0.0, min(1.0, 1 - from_top / over))
+                    except Exception:
+                        pass
+                Clock.schedule_once(_to_sizes, 0.15)
+            else:
+                Clock.schedule_once(lambda dt: (None if any(f.focus for f in (in_l, in_w, in_c, in_cost))
+                                                else setattr(kb_pad, 'height', 0)), 0.2)
+        for _f in (in_l, in_w, in_c, in_cost):
+            _f.bind(focus=_kb_focus)
         scroll.add_widget(content); pop.open()
 
     def _final_save(self, idx, res_t, btn, mode="banner_white", print_cost=0.0, via_malevich=False, creditor_idx=None, order_desc=None, price=None, badge=None, print_price=0.0):
