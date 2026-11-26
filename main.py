@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.25"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.26"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -4683,6 +4683,43 @@ class ClientsScreen(Screen):
             lbl_cl2 = Label(text=f"[size=16sp][color=#FFD54F]печать через:[/color][/size]  [size=21sp][b][color=#FFFFFF]{cr_name}[/color][/b][/size]", markup=True, size_hint_y=None, height=54, halign='center', valign='middle', shorten=False)
             lbl_cl2.bind(size=lambda s, v: setattr(s, 'text_size', (None, v[1])))
             card_client.add_widget(lbl_cl2)
+        self._calc_file_with = None
+        if via_malevich and mode in ('banner_white', 'banner_black', 'plenka', 'plenka_gloss', 'plenka_matte') \
+                and not app.clients[idx].get('is_creditor'):
+            btn_file = RoundedButton(text="ФАЙЛ: отдельно", bg_color=(0.2, 0.23, 0.29, 1), bold=True,
+                                     font_size='17sp', radius=12, size_hint_y=None, height=_sp(46))
+
+            def _pick_file(*a):
+                today = datetime.now().strftime("%d.%m.%y")
+                ensure_ids(app.clients)
+                me = app.clients[idx]
+                cands = [oc for oc in app.clients if oc is not me and not oc.get('is_creditor')
+                         and any(h.get('via_malevich') and str(h.get('date', ''))[:8] == today
+                                 for h in oc.get('history', []))]
+                box = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+                pp = TopMenuPopup(title="В ОДИН ФАЙЛ С", content=box, size_hint=(0.9, 0.7))
+                box.add_widget(self._gr_auto_label("[color=#AAB4C8]с чьим заказом за сегодня печатается вместе[/color]", font='14sp'))
+
+                def _set(cid, name):
+                    self._calc_file_with = cid
+                    btn_file.text = f"ФАЙЛ: вместе с {name}" if cid else "ФАЙЛ: отдельно"
+                    btn_file.bg_color = (0.16, 0.45, 0.32, 1) if cid else (0.2, 0.23, 0.29, 1)
+                    pp.dismiss()
+                for oc in cands:
+                    b = RoundedButton(text=oc.get('name', ''), bg_color=(0.16, 0.36, 0.55, 1), bold=True,
+                                      font_size='18sp', radius=12, size_hint_y=None, height=_sp(50))
+                    b.bind(on_release=lambda x, cid=oc.get('cid'), n=oc.get('name', ''): _set(cid, n))
+                    box.add_widget(b)
+                if not cands:
+                    box.add_widget(self._gr_auto_label("[color=#7F8A99]сегодня других заказов через исполнителя нет[/color]", font='15sp'))
+                b0 = RoundedButton(text="ОТДЕЛЬНО", bg_color=(0.3, 0.3, 0.34, 1), bold=True, font_size='18sp',
+                                   radius=12, size_hint_y=None, height=_sp(50))
+                b0.bind(on_release=lambda x: _set(None, ''))
+                box.add_widget(b0)
+                box.add_widget(Widget())
+                pp.open()
+            btn_file.bind(on_release=_pick_file)
+            card_client.add_widget(btn_file)
 
         # ── СЕКЦИЯ: МАТЕРИАЛ ──
         card_mat, body_mat = self._calc_section("МАТЕРИАЛ", accent=(0.55, 0.4, 0.75), title_color="#C0A0FF")
@@ -5087,6 +5124,9 @@ class ClientsScreen(Screen):
             }
             if price is not None: hist_item['price'] = price
             if badge is not None: hist_item['badge'] = badge
+            _fw = getattr(self, '_calc_file_with', None)
+            if via_malevich and _fw and _fw != c.get('cid'):
+                hist_item['file_with'] = _fw          # «в один файл с» — раскладка вместе с этим клиентом
             if via_malevich and creditor_idx is not None:
                 hist_item['creditor_name'] = app.clients[creditor_idx].get('name')
                 hist_item['creditor_id'] = app.clients[creditor_idx]['cid']

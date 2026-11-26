@@ -124,6 +124,26 @@ class RollPaybackTests(unittest.TestCase):
         self.assertTrue(self.app.take_profit(reset=True)[0])
         self.assertTrue(self.app.current_since())
 
+    def test_file_with_other_client(self):
+        self.app.rolls = [{'color': 'black', 'width': '3.2', 'total': '50', 'remain': '30'}]
+        self.app.clients.append({'name': 'ОЛЕГ', 'debt': '0', 'is_creditor': True, 'history': []})
+        self.app.clients.append({'name': 'НАСТЯ', 'debt': '0', 'history': []})
+        main.ensure_ids(self.app.clients)
+        oleg, nastya = len(self.app.clients) - 2, len(self.app.clients) - 1
+        idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.assertTrue(self.screen._final_save(idx, '3 000 руб', None, 'banner_black', order_desc='5x2 x1шт',
+                                                via_malevich=True, creditor_idx=oleg))
+        self.assertEqual(self.app.rolls[0]['remain'], '24.9')          # 5.1 м
+        self.screen._calc_file_with = self.sasha['cid']                 # Настя — в один файл с Сашей
+        self.assertTrue(self.screen._final_save(nastya, '500 руб', None, 'banner_black', order_desc='1x1 x1шт',
+                                                via_malevich=True, creditor_idx=oleg))
+        self.assertEqual(self.app.rolls[0]['remain'], '24.9')          # встала в пустоту рядом с банером Саши
+        self.screen._calc_file_with = None
+        self.assertTrue(self.screen._final_save(nastya, '500 руб', None, 'banner_black', order_desc='1x1 x1шт',
+                                                via_malevich=True, creditor_idx=oleg))
+        self.assertEqual(self.app.rolls[0]['remain'], '24.9')          # её второй — тоже рядом (тот же файл)
+        self.screen.show_simple_calc(nastya, 300, mode='banner_black', via_malevich=True, creditor_idx=oleg)
+
     def test_pack_like_corel_2611(self):
         from accounting import pack_length
         it = [(1.384, 3.05, 2), (3.05, 0.55, 2), (2.1, 2.1, 2), (4.55, 0.672, 1), (4.2, 2.6, 1), (3.1, 2.6, 1), (5.3, 1.4, 1)]

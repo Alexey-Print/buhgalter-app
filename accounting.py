@@ -413,7 +413,7 @@ def pick_roll(app, color):
 
 def consume_roll_for_order(app, client, item):
     """Списать метры с рулона за заказ (через исполнителя). Позиции одного клиента за день
-    раскладываются вместе: списывается прибавка к длине его заказа за день. Остаток может уйти в минус — до прихода рулона."""
+    (и клиентов, отмеченных «в один файл») раскладываются вместе: списывается прибавка к длине его заказа за день. Остаток может уйти в минус — до прихода рулона."""
     color = order_roll_color(item)
     size = parse_size(item.get('desc'))
     if color is None or size is None or client.get('is_creditor'):
@@ -422,7 +422,21 @@ def consume_roll_for_order(app, client, item):
     w = number(roll.get('width')) or 3.2
     day = str(item.get('date', ''))[:8]
     others = []
-    for c in (client,):                  # раскладка — только внутри заказов этого клиента за день
+    # раскладка дня — этот клиент + те, с кем Алексей отметил «в один файл» (в обе стороны)
+    mates = [client]
+    fws = {item.get('file_with')} | {h.get('file_with') for h in client.get('history', [])
+                                     if str(h.get('date', ''))[:8] == day}
+    fws.discard(None)
+    my_cid = client.get('cid')
+    for oc in (app.clients or []):
+        if oc is client or oc.get('is_creditor'):
+            continue
+        if oc.get('cid') in fws:
+            mates.append(oc)
+        elif my_cid and any(h.get('file_with') == my_cid and str(h.get('date', ''))[:8] == day
+                            for h in oc.get('history', [])):
+            mates.append(oc)
+    for c in mates:
         for h in c.get('history', []):
             # раскладка дня — только с заказами, которые уже списали метры (иначе сумма не сойдётся)
             if h is item or 'roll_m' not in h or order_roll_color(h) != color or str(h.get('date', ''))[:8] != day:
