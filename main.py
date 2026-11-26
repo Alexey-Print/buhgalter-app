@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.27"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.28"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -3816,6 +3816,35 @@ class ClientsScreen(Screen):
                 + (f"\n[color=#E3E9F2]{who}[/color]" if who else "")
                 + f"\n[size=22sp][b]остаток: [color={_lc}]{format_num_simple(e.get('left', 0))} м[/color][/b][/size]")
 
+    @staticmethod
+    def _roll_history_groups(ents):
+        """Списания одного клиента за один день (один файл) — одной группой."""
+        groups = []
+        for e in ents:
+            who = str(e.get('who', '') or '')
+            name = who.split(':', 1)[0].strip() if ':' in who else ''
+            key = (str(e.get('date', ''))[:8], name) if (e.get('kind') == 'списано' and name) else None
+            if key and groups and groups[-1]['key'] == key:
+                groups[-1]['items'].append(e)
+            else:
+                groups.append({'key': key, 'items': [e]})
+        return groups
+
+    def _roll_history_group_text(self, g):
+        items = g['items']
+        if len(items) == 1:
+            return self._roll_history_line(items[0])
+        e0, e1 = items[0], items[-1]
+        total = round(sum(safe_float(e.get('m')) for e in items), 2)
+        left = safe_float(e1.get('left'))
+        _lc = '#FF6B6B' if left < 0 else '#5FD39B'
+        name = escape_markup(g['key'][1])
+        pos = "\n".join(f"[size=14sp][color=#AAB4C8]  {escape_markup(str(e.get('who', '')).split(':', 1)[-1].strip())}"
+                        f"[/color][/size]" for e in items)
+        return (f"[color=#AAB4C8]{str(e0.get('date', ''))[:8]}[/color]  [b][color=#FFB74D]списано −{format_num_simple(total)} м[/color][/b]"
+                f"\n[color=#E3E9F2]{name} — {len(items)} поз., один файл[/color]\n{pos}"
+                f"\n[size=22sp][b]остаток: [color={_lc}]{format_num_simple(round(left, 2))} м[/color][/b][/size]")
+
     def _roll_history_popup(self, ri, back_cb=None):
         app = App.get_running_app()
         if not app or ri is None or ri >= len(app.rolls or []):
@@ -3834,9 +3863,9 @@ class ClientsScreen(Screen):
         ents = self._roll_history_entries(roll)
         if not ents:
             grid.add_widget(self._gr_auto_label("[color=#7F8A99]пока пусто[/color]", font='15sp'))
-        for e in reversed(ents[-80:]):
-            grid.add_widget(self._gr_panel([self._gr_auto_label(self._roll_history_line(e), font='18sp', color=GR_TEXT,
-                                                                halign='left')], pad=6))
+        for g in reversed(self._roll_history_groups(ents[-120:])):
+            grid.add_widget(self._gr_panel([self._gr_auto_label(self._roll_history_group_text(g), font='18sp',
+                                                                color=GR_TEXT, halign='left')], pad=6))
         content.add_widget(self.get_bottom_buttons(pop, back_cb, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
@@ -4735,7 +4764,7 @@ class ClientsScreen(Screen):
         self._calc_file_with = None
         if via_malevich and mode in ('banner_white', 'banner_black', 'plenka', 'plenka_gloss', 'plenka_matte') \
                 and not app.clients[idx].get('is_creditor'):
-            btn_file = RoundedButton(text="ФАЙЛ: отдельно", bg_color=(0.2, 0.23, 0.29, 1), bold=True,
+            btn_file = RoundedButton(text="В ОДИН ФАЙЛ С ДРУГИМ КЛИЕНТОМ: нет", bg_color=(0.2, 0.23, 0.29, 1), bold=True,
                                      font_size='17sp', radius=12, size_hint_y=None, height=_sp(46))
 
             def _pick_file(*a):
@@ -4747,11 +4776,13 @@ class ClientsScreen(Screen):
                                  for h in oc.get('history', []))]
                 box = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
                 pp = TopMenuPopup(title="В ОДИН ФАЙЛ С", content=box, size_hint=(0.9, 0.7))
-                box.add_widget(self._gr_auto_label("[color=#AAB4C8]с чьим заказом за сегодня печатается вместе[/color]", font='14sp'))
+                box.add_widget(self._gr_auto_label(
+                    "[color=#AAB4C8]Позиции этого клиента за день и так считаются одним файлом.\n"
+                    "Выбирайте, только если печатаете вместе с заказом ДРУГОГО клиента.[/color]", font='14sp'))
 
                 def _set(cid, name):
                     self._calc_file_with = cid
-                    btn_file.text = f"ФАЙЛ: вместе с {name}" if cid else "ФАЙЛ: отдельно"
+                    btn_file.text = (f"В ОДИН ФАЙЛ С: {name}" if cid else "В ОДИН ФАЙЛ С ДРУГИМ КЛИЕНТОМ: нет")
                     btn_file.bg_color = (0.16, 0.45, 0.32, 1) if cid else (0.2, 0.23, 0.29, 1)
                     pp.dismiss()
                 for oc in cands:
@@ -4761,7 +4792,7 @@ class ClientsScreen(Screen):
                     box.add_widget(b)
                 if not cands:
                     box.add_widget(self._gr_auto_label("[color=#7F8A99]сегодня других заказов через исполнителя нет[/color]", font='15sp'))
-                b0 = RoundedButton(text="ОТДЕЛЬНО", bg_color=(0.3, 0.3, 0.34, 1), bold=True, font_size='18sp',
+                b0 = RoundedButton(text="НЕТ, ОТДЕЛЬНО", bg_color=(0.3, 0.3, 0.34, 1), bold=True, font_size='18sp',
                                    radius=12, size_hint_y=None, height=_sp(50))
                 b0.bind(on_release=lambda x: _set(None, ''))
                 box.add_widget(b0)
