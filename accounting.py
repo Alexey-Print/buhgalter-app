@@ -264,12 +264,43 @@ def roll_length(a, b, qty=1, roll_w=3.2):
     return round(one * qty, 2)
 
 
+def _pack_once(items, W, pref):
+    """Одна раскладка «гильотиной» в заданном порядке: каждый банер — в самую подходящую свободную полосу
+    (где меньше всего остаётся пустого по ширине), иначе — новым рядом (поворот берётся из pref)."""
+    eps, strips, total = 1e-6, [], 0.0
+    for idx, (lo, hi) in enumerate(items):
+        best = None
+        for si, st in enumerate(strips):
+            for across, along in ((hi, lo), (lo, hi)):
+                if across <= st[0] + eps and along <= st[1] + eps:
+                    waste = st[0] - across
+                    if best is None or waste < best[0] - eps:
+                        best = (waste, si, across, along)
+        if best is not None:
+            _, si, across, along = best
+            st = strips[si]
+            st[1] -= along                                   # заняли кусок полосы по длине
+            if st[0] - across > eps:
+                strips.append([st[0] - across, along])       # рядом с банером осталась полоска
+            continue
+        if lo > W + eps:                                     # шире рулона — со швом, по площади
+            total += lo * hi / W
+            continue
+        opts = [(hi, lo), (lo, hi)] if hi <= W + eps else [(lo, hi)]
+        across, along = opts[pref[idx] % len(opts)]
+        total += along
+        if W - across > eps:
+            strips.append([W - across, along])
+    return total
+
+
 def pack_length(pieces, roll_w=3.2, max_pieces=400, margin=0.05):
-    """Сколько метров рулона уйдёт на набор банеров [(a, b, штук), ...], если раскладывать их вместе:
-    сначала большие, мелкие — в свободные полосы рядом (как на бумаге), остальное — новыми рядами.
-    Простая жадная раскладка «гильотиной»: точнее, чем по одному, но не идеал.
+    """Сколько метров рулона уйдёт на набор банеров [(a, b, штук), ...], если раскладывать их вместе,
+    как в Кореле: мелкие — в пустоты рядом с крупными. Перебираются разные порядки и повороты
+    (всегда одинаково — результат повторяется), берётся самая короткая раскладка.
     margin — поля вокруг каждого банера (по 5 см с каждой стороны → +10 см к каждому размеру)."""
-    W, eps = float(roll_w) or 3.2, 1e-6
+    import random
+    W = float(roll_w) or 3.2
     items = []
     for a, b, q in pieces:
         a, b = float(a), float(b)
@@ -279,31 +310,18 @@ def pack_length(pieces, roll_w=3.2, max_pieces=400, margin=0.05):
         items.extend([(min(a, b), max(a, b))] * max(1, int(q)))
         if len(items) > max_pieces:
             break
-    items.sort(key=lambda p: (p[0], p[1]), reverse=True)   # сначала широкие
-    strips = []    # свободные полосы: [ширина, длина]
-    total = 0.0
-    for lo, hi in items:
-        placed = False
-        for st in strips:
-            for across, along in ((hi, lo), (lo, hi)):
-                if across <= st[0] + eps and along <= st[1] + eps:
-                    st[1] -= along                       # заняли кусок полосы по длине
-                    if st[0] - across > eps:
-                        strips.append([st[0] - across, along])   # рядом с банером осталась полоска
-                    placed = True
-                    break
-            if placed:
-                break
-        if placed:
-            continue
-        if lo > W + eps:                                 # шире рулона — со швом, по площади
-            total += lo * hi / W
-            continue
-        across, along = (hi, lo) if hi <= W + eps else (lo, hi)
-        total += along
-        if W - across > eps:
-            strips.append([W - across, along])
-    return round(total, 2)
+    if not items:
+        return 0.0
+    n = len(items)
+    base = [sorted(items, key=k, reverse=True) for k in
+            (lambda p: (p[0], p[1]), lambda p: (p[1], p[0]), lambda p: p[0] * p[1])]
+    best = min(min(_pack_once(o, W, [0] * n), _pack_once(o, W, [1] * n)) for o in base)
+    if n > 1:
+        rng = random.Random(12345)
+        for _ in range(max(30, min(1500, 30000 // n))):
+            o = rng.sample(items, n)
+            best = min(best, _pack_once(o, W, [rng.randint(0, 1) for _ in range(n)]))
+    return round(best, 2)
 
 
 def roll_length(a, b, qty=1, roll_w=3.2, margin=0.05):
@@ -412,8 +430,8 @@ def consume_roll_for_order(app, client, item):
             sz = parse_size(h.get('desc'))
             if sz:
                 others.append(sz)
-    # без полей: по чистому размеру, как Олег и клиент (Алексей 25.11); поправить можно вручную
-    delta = round(max(0.0, pack_length(others + [size], w, margin=0) - pack_length(others, w, margin=0)), 2)
+    # с полями 5 см и лучшей раскладкой, как в Кореле (Алексей 26.11); поправить можно вручную
+    delta = round(max(0.0, pack_length(others + [size], w) - pack_length(others, w)), 2)
     if delta <= 0:                      # встало рядом с другими заказами дня — лишней длины нет
         item['roll_m'], item['roll_rid'] = 0.0, roll['rid']
         add_roll_log(app, {'kind': 'списано', 'm': 0.0, 'left': round(number(roll.get('remain')), 2), 'color': color,

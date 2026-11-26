@@ -124,6 +124,12 @@ class RollPaybackTests(unittest.TestCase):
         self.assertTrue(self.app.take_profit(reset=True)[0])
         self.assertTrue(self.app.current_since())
 
+    def test_pack_like_corel_2611(self):
+        from accounting import pack_length
+        it = [(1.384, 3.05, 2), (3.05, 0.55, 2), (2.1, 2.1, 2), (4.55, 0.672, 1), (4.2, 2.6, 1), (3.1, 2.6, 1), (5.3, 1.4, 1)]
+        self.assertEqual(pack_length(it, 3.2), 19.83)                  # список Алексея 26.11, с полями 5 см
+        self.assertEqual(pack_length(it, 3.2), pack_length(it, 3.2))   # всегда одинаково
+
     def test_roll_card_arrive_and_fix(self):
         made = []
         orig = main.RoundedButton.__init__
@@ -249,20 +255,20 @@ class RollPaybackTests(unittest.TestCase):
         self.screen._final_save = via
         self.assertTrue(self.screen._final_save(idx, '5 400 руб', None, 'banner_black', order_desc='4.5x3 x2шт'))
         first = self.sasha['history'][-1]
-        self.assertEqual(first['roll_m'], 9.0)                      # 2 × 4.5 без полей, ширина 3.1 влезает
-        self.assertEqual(self.app.rolls[0]['remain'], '4.5')
+        self.assertEqual(first['roll_m'], 9.2)                      # 2 × (4.5+0.1) с полями, ширина 3.1 влезает
+        self.assertEqual(self.app.rolls[0]['remain'], '4.3')
         self.assertTrue(self.screen._final_save(idx, '2 132 руб', None, 'banner_black', order_desc='2.6x4.1 x1шт'))
-        self.assertEqual(self.app.rolls[0]['remain'], '0.4')         # 2.6 поперёк, длина 4.1
+        self.assertEqual(self.app.rolls[0]['remain'], '0.1')         # 2.7 поперёк, длина 4.2
         self.assertTrue(self.screen._final_save(idx, '3 600 руб', None, 'banner_black', order_desc='6x3 x1шт'))
-        self.assertEqual(self.app.rolls[0]['remain'], '-5.6')          # в минус — до нового рулона
+        self.assertEqual(self.app.rolls[0]['remain'], '-6')          # в минус — до нового рулона
         self.assertTrue(pb(self.app, 'black', 9000, '3.2', 50)[0])  # закупка с метрами — в тот же рулон
         self.assertEqual(len([r for r in self.app.rolls if r['color'] == 'black']), 1)
-        self.assertEqual(self.app.rolls[0]['remain'], '44.4')
+        self.assertEqual(self.app.rolls[0]['remain'], '44')
         self.assertTrue(reverse_order(self.app, self.sasha, first)[0])
-        self.assertEqual(self.app.rolls[0]['remain'], '53.4')        # отмена заказа вернула метры
+        self.assertEqual(self.app.rolls[0]['remain'], '53.2')        # отмена заказа вернула метры
         self.assertTrue(self.screen._final_save(idx, '500 руб', None, 'banner_white', order_desc='1x1 x1шт'))
         self.assertEqual([r['color'] for r in self.app.rolls], ['black', 'white'])   # белого не было — заведён
-        self.assertEqual(self.app.rolls[1]['remain'], '-1')
+        self.assertEqual(self.app.rolls[1]['remain'], '-1.1')
         self.screen._final_save = own
         self.assertEqual(main.check_integrity(self.app), [])
         self.screen.show_rolls_log()
@@ -290,7 +296,7 @@ class RollPaybackTests(unittest.TestCase):
         app = main.BusinessApp(); main.App._running_app = app
         app.load_data()
         rem = {r['color']: r['remain'] for r in app.rolls}
-        self.assertEqual(rem, {'black': '-17.6', 'white': '6.87'})   # белый: 3x6 Саши и 5.13x2.35 Малевича — по отдельности
+        self.assertEqual(rem, {'black': '-18.2', 'white': '6.67'})   # белый: 3x6 Саши и 5.13x2.35 Малевича — по отдельности
         app.save_data()
         app2 = main.BusinessApp(); main.App._running_app = app2
         app2.load_data()
@@ -305,14 +311,14 @@ class RollPaybackTests(unittest.TestCase):
         for d in ('5.13x2.35 x1шт', '0.85x0.6 x5шт'):
             self.assertTrue(self.screen._final_save(idx, '1 000 руб', None, 'banner_white', order_desc=d,
                                                     via_malevich=True, creditor_idx=oleg))
-        self.assertEqual(self.app.rolls[0]['remain'], '12.87')          # мелкие встали рядом с большим (тот же клиент)
+        self.assertEqual(self.app.rolls[0]['remain'], '12.77')          # мелкие встали рядом с большим (тот же клиент)
         last = self.app._extra_data['roll_log'][-1]
         self.assertEqual((last['m'], last['note']), (0.0, 'рядом'))
         self.app.clients.append({'name': 'СЕРЕГА', 'debt': '0', 'history': []})       # другой клиент — отдельно
         main.ensure_ids(self.app.clients)
         self.assertTrue(self.screen._final_save(len(self.app.clients) - 1, '510 руб', None, 'banner_white',
                                                 order_desc='0.85x0.6 x5шт', via_malevich=True, creditor_idx=oleg))
-        self.assertEqual(self.app.rolls[0]['remain'], '11.67')          # 3 в ряд, 2 ряда по 0.6
+        self.assertEqual(self.app.rolls[0]['remain'], '11.37')          # 3 в ряд, 2 ряда по 0.7
         self.screen.show_rolls_log()
 
     def test_migration_per_client_recounts_zero(self):
@@ -330,7 +336,7 @@ class RollPaybackTests(unittest.TestCase):
             json.dump(data, f, ensure_ascii=False)
         app = main.BusinessApp(); main.App._running_app = app
         app.load_data()
-        self.assertEqual(app.rolls[0]['remain'], '5.47')                 # 6.67 − 1.2 (без полей)
+        self.assertEqual(app.rolls[0]['remain'], '5.27')                 # 6.67 − 1.4 (с полями)
 
     def test_payback_via_executor_uses_margin(self):
         self.assertTrue(purchase_banner(self.app, 'black', 6000)[0])
