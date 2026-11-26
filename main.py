@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.26"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.27"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1529,9 +1529,9 @@ class ClientsScreen(Screen):
         lbl = Label(text=text, markup=True, font_size='19sp', halign='left', valign='middle')
         lbl.bind(size=lambda s, v: setattr(s, 'text_size', v))
         if big:
-            self._fit_font(lbl, max_sp=32, min_sp=19)
+            self._fit_font(lbl, max_sp=32, min_sp=15, plain=True)
         else:
-            self._fit_font(lbl, max_sp=25, min_sp=15)
+            self._fit_font(lbl, max_sp=25, min_sp=13, plain=True)
         click.add_widget(lbl)
         click.bind(on_release=lambda *a: edit_cb(None))
         if neon:
@@ -1581,9 +1581,27 @@ class ClientsScreen(Screen):
                 if cnt == 0:
                     text = "[b][color=#FFFFFF]ОСТАТКИ[/color][/b]  [color=#9A9A9A]рулонов:[/color]  [b][color=#FFB84D]нет[/color][/b]"
                 else:
-                    _rem = format_num_simple(main.get('remain', '0')) if main else '0'
-                    text = f"[b][color=#FFFFFF]ОСТАТКИ[/color][/b]  [size=15sp][color=#9A9A9A]рул.: {cnt}[/color][/size]    [b][color=#FFB84D]{_rem} м[/color][/b]"
+                    # все рулоны коротко: Б 11.4 · Ч 42 м
+                    _parts = []
+                    for _r in rolls:
+                        _k = {'white': 'Б', 'black': 'Ч', 'plenka': 'П'}.get(_r.get('color', 'white'), '?')
+                        _v = safe_float(_r.get('remain'))
+                        _cl = '#FF6B6B' if _v < 0 else '#FFB84D'
+                        _parts.append(f"[color=#9A9A9A]{_k}[/color] [b][color={_cl}]{format_num_simple(round(_v, 2))}[/color][/b]")
+                    text = f"[b][color=#FFFFFF]ОСТАТКИ[/color][/b]   " + "  ".join(_parts) + " [color=#9A9A9A]м[/color]"
                 row = self._banner_row(text, (lambda x: self.show_rolls_inventory()), None, big=True)
+                panel.add_widget(row)
+                # три строки (чёрный / белый / плёнка) — одной: сколько осталось до окупаемости
+                _sp_idx = [i for i in (c_idx, b_idx, app.plenka_index()) if i is not None]
+                _minus = sum(abs(safe_float(app.clients[i].get('debt', '0'))) for i in _sp_idx)
+                if _minus > 0:
+                    t2 = (f"[b][color=#FFFFFF]ДО ОКУПАЕМОСТИ:[/color][/b]  "
+                          f"[b][color=#FF8A80]{rub(_minus)} р[/color][/b]")
+                else:
+                    t2 = "[b][color=#FFFFFF]РУЛОНЫ:[/color][/b]  [b][color=#5FD39B]всё окуплено[/color][/b]"
+                row = self._banner_row(t2, (lambda x: self.show_payback_popup()), (0.30, 0.55, 1.0))
+                panel.add_widget(row)
+                break
             else:
                 disp = {"white": "БЕЛЫЙ", "black": "ЧЕРНЫЙ", "plenka": "ПЛЁНКА"}[kind]
                 dnum = abs(safe_float(client.get('debt', '0')))
@@ -1596,6 +1614,37 @@ class ClientsScreen(Screen):
                 row = self._banner_row(text, (lambda x, i=idx: self.show_edit_popup(i)), neon)
             panel.add_widget(row)
         return panel
+
+    def show_payback_popup(self, *a):
+        """Окупаемость рулонов по позициям: чёрный / белый / плёнка (нажать — правка, как раньше)."""
+        app = App.get_running_app()
+        if not app:
+            return
+        _, _, b_idx, c_idx = app.get_special_clients()
+        content = BoxLayout(orientation='vertical', spacing=_sp(10), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        pop = TopMenuPopup(title="ОКУПАЕМОСТЬ РУЛОНОВ", content=content, size_hint=(0.96, 0.7))
+        pop.background_color = GR_BG
+        content.add_widget(self._gr_auto_label(
+            "[color=#AAB4C8]минус — сколько ещё должно вернуться с заказов за купленный рулон[/color]", font='14sp'))
+        for idx, kind in ((c_idx, 'black'), (b_idx, 'white'), (app.plenka_index(), 'plenka')):
+            if idx is None:
+                continue
+            client = app.clients[idx]
+            disp = {"white": "БЕЛЫЙ", "black": "ЧЕРНЫЙ", "plenka": "ПЛЁНКА"}[kind]
+            dnum = abs(safe_float(client.get('debt', '0')))
+            if dnum > 0:
+                text = f"[b][color=#FFFFFF]{disp}[/color][/b]  [color=#9A9A9A]МИНУС:[/color] [b][color=#FF8A80]{rub(dnum)} р[/color][/b]"
+            else:
+                text = f"[b][color=#FFFFFF]{disp}[/color][/b]  [b][color=#5FD39B]окуплен[/color][/b]"
+            neon = {"white": (0.66, 0.3, 1.0), "black": (0.30, 0.55, 1.0), "plenka": (0.25, 0.8, 0.5)}[kind]
+
+            def _open(x, i=idx):
+                pop.dismiss()
+                self.show_edit_popup(i)
+            content.add_widget(self._banner_row(text, _open, neon))
+        content.add_widget(Widget())
+        content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
+        pop.open()
 
     def _build_client_row(self, i):
         app = App.get_running_app()
