@@ -422,7 +422,19 @@ def consume_roll_for_order(app, client, item):
     w = number(roll.get('width')) or 3.2
     day = str(item.get('date', ''))[:8]
     others = []
-    # раскладка дня — этот клиент + те, с кем Алексей отметил «в один файл» (в обе стороны)
+    fid = item.get('file_id')
+    if fid:                              # новый порядок: один файл печати = один file_id (любые клиенты)
+        for c in (app.clients or []):
+            if c.get('is_creditor'):
+                continue
+            for h in c.get('history', []):
+                if h is item or h.get('file_id') != fid or 'roll_m' not in h or order_roll_color(h) != color:
+                    continue
+                sz = parse_size(h.get('desc'))
+                if sz:
+                    others.append(sz)
+        return _consume_delta(app, client, item, roll, color, w, others, size)
+    # старые заказы: этот клиент за день + отмеченные «в один файл» (в обе стороны)
     mates = [client]
     fws = {item.get('file_with')} | {h.get('file_with') for h in client.get('history', [])
                                      if str(h.get('date', ''))[:8] == day}
@@ -444,19 +456,23 @@ def consume_roll_for_order(app, client, item):
             sz = parse_size(h.get('desc'))
             if sz:
                 others.append(sz)
+    return _consume_delta(app, client, item, roll, color, w, others, size)
+
+
+def _consume_delta(app, client, item, roll, color, w, others, size):
     # с полями 5 см и лучшей раскладкой, как в Кореле (Алексей 26.11); поправить можно вручную
     delta = round(max(0.0, pack_length(others + [size], w) - pack_length(others, w)), 2)
     if delta <= 0:                      # встало рядом с другими заказами дня — лишней длины нет
         item['roll_m'], item['roll_rid'] = 0.0, roll['rid']
         add_roll_log(app, {'kind': 'списано', 'm': 0.0, 'left': round(number(roll.get('remain')), 2), 'color': color,
-                           'width': roll.get('width'), 'note': 'рядом',
+                           'width': roll.get('width'), 'note': 'рядом', 'fid': item.get('file_id'),
                            'who': f"{client.get('name', '')}: {str(item.get('desc', '')).strip()}"})
         return 0.0
     left = round(number(roll.get('remain')) - delta, 2)
     roll['remain'] = money(left)
     item['roll_m'], item['roll_rid'] = delta, roll['rid']
     add_roll_log(app, {'kind': 'списано', 'm': delta, 'left': left, 'color': color, 'width': roll.get('width'),
-                       'note': 'заказ', 'who': f"{client.get('name', '')}: {str(item.get('desc', '')).strip()}"})
+                       'note': 'заказ', 'fid': item.get('file_id'), 'who': f"{client.get('name', '')}: {str(item.get('desc', '')).strip()}"})
     return delta
 
 

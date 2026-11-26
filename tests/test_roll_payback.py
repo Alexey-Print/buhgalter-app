@@ -131,17 +131,21 @@ class RollPaybackTests(unittest.TestCase):
         main.ensure_ids(self.app.clients)
         oleg, nastya = len(self.app.clients) - 2, len(self.app.clients) - 1
         idx = next(i for i, c in enumerate(self.app.clients) if c is self.sasha)
+        self.screen._calc_file_id = 'A'                                  # заказ Саши — файл A
         self.assertTrue(self.screen._final_save(idx, '3 000 руб', None, 'banner_black', order_desc='5x2 x1шт',
                                                 via_malevich=True, creditor_idx=oleg))
         self.assertEqual(self.app.rolls[0]['remain'], '24.9')          # 5.1 м
-        self.screen._calc_file_with = self.sasha['cid']                 # Настя — в один файл с Сашей
+        self.screen._calc_file_id = 'A'                                  # Настя — «одним файлом с предыдущим»
         self.assertTrue(self.screen._final_save(nastya, '500 руб', None, 'banner_black', order_desc='1x1 x1шт',
                                                 via_malevich=True, creditor_idx=oleg))
         self.assertEqual(self.app.rolls[0]['remain'], '24.9')          # встала в пустоту рядом с банером Саши
-        self.screen._calc_file_with = None
-        self.assertTrue(self.screen._final_save(nastya, '500 руб', None, 'banner_black', order_desc='1x1 x1шт',
+        self.screen._calc_file_id = 'B'                                  # новый заказ Саши — отдельный файл
+        self.assertTrue(self.screen._final_save(idx, '500 руб', None, 'banner_black', order_desc='1x1 x1шт',
                                                 via_malevich=True, creditor_idx=oleg))
-        self.assertEqual(self.app.rolls[0]['remain'], '24.9')          # её второй — тоже рядом (тот же файл)
+        self.assertEqual(self.app.rolls[0]['remain'], '23.8')          # отдельно: 1.1 м
+        grp = self.screen._roll_history_groups(self.screen._roll_history_entries(self.app.rolls[0]))
+        self.assertEqual([len(g['items']) for g in grp], [2, 1])
+        self.assertIn('САША, НАСТЯ', self.screen._roll_history_group_text(grp[0]).upper())
         self.screen.show_simple_calc(nastya, 300, mode='banner_black', via_malevich=True, creditor_idx=oleg)
 
     def test_pack_like_corel_2611(self):
