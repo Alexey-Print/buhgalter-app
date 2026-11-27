@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.32"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.33"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1523,7 +1523,7 @@ class ClientsScreen(Screen):
         card.add_widget(header)
         return card
 
-    def _banner_row(self, text, edit_cb, neon=None, big=False):
+    def _banner_row(self, text, edit_cb, neon=None, big=False, tap_cb=None):
         row = BoxLayout(size_hint_y=None, height=(140 if big else 106), spacing=8, padding=[6, 5, 6, 5])
         click = ClickBox(orientation='horizontal', padding=[12, 0, 0, 0])
         lbl = Label(text=text, markup=True, font_size='19sp', halign='left', valign='middle')
@@ -1533,7 +1533,7 @@ class ClientsScreen(Screen):
         else:
             self._fit_font(lbl, max_sp=25, min_sp=13, plain=True)
         click.add_widget(lbl)
-        click.bind(on_release=lambda *a: edit_cb(None))
+        click.bind(on_release=lambda *a: (tap_cb or edit_cb)(None))
         if neon:
             _b = (neon[0] * 0.22, neon[1] * 0.22, neon[2] * 0.22)
             _bd = neon
@@ -1615,6 +1615,71 @@ class ClientsScreen(Screen):
             panel.add_widget(row)
         return panel
 
+    def payback_moves(self, client):
+        """Как гасится минус рулона: с последней закупки (минус вырос) — каждое изменение по порядку.
+        [(дата 'дд.мм.гг', что, на сколько изменилось (+ гасит), минус после)]; первая строка — закупка."""
+        app = App.get_running_app()
+        cid = client.get('cid')
+        jr = [e for e in (getattr(app, 'journal', None) or []) if cid and e.get('cid') == cid
+              and abs(safe_float(e.get('now')) - safe_float(e.get('was'))) > 0.004]
+        start = 0
+        for k, e in enumerate(jr):                     # последняя закупка: минус стал больше
+            if abs(safe_float(e.get('now'))) > abs(safe_float(e.get('was'))) + 0.004:
+                start = k
+        names = {}                                     # кто заказывал: из истории прибыли по минуте
+        for it in (getattr(app, 'profit_log', None) or []):
+            d = str(it.get('date', ''))
+            if len(d) >= 14 and safe_float(it.get('to_roll')) > 0.004:
+                names.setdefault(f"20{d[6:8]}-{d[3:5]}-{d[0:2]} {d[9:14]}", []).append(str(it.get('name', '')))
+        out = []
+        for e in jr[start:]:
+            t = str(e.get('t', ''))
+            day = f"{t[8:10]}.{t[5:7]}.{t[2:4]}" if len(t) >= 16 else t
+            was, now = abs(safe_float(e.get('was'))), abs(safe_float(e.get('now')))
+            op = str(e.get('op') or '')
+            if now > was + 0.004:
+                what = 'закупка' if 'закупк' in op or 'рулон' in op else (op or 'минус вырос')
+            elif op.startswith('заказ'):
+                nm = names.get(t[:16]) or []
+                what = (nm[0] + ': ' if nm else '') + op[7:].strip() if op.startswith('заказ: ') else op
+            else:
+                what = op or 'изменение'
+            out.append((day, what, round(was - now, 2), round(now, 2)))
+        return out
+
+    def show_payback_history(self, idx):
+        app = App.get_running_app()
+        if not app or idx is None:
+            return
+        client = app.clients[idx]
+        disp = str(client.get('name', '')).upper()
+        content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
+        pop = TopMenuPopup(title=f"ОКУПАЕМОСТЬ: {disp}", content=content, size_hint=(0.96, 0.92))
+        pop.background_color = GR_BG
+        now = abs(safe_float(client.get('debt')))
+        head = (f"[b]осталось вернуть: [color=#FF8A80]{rub(now)} р[/color][/b]" if now > 0.004
+                else "[b][color=#5FD39B]окуплен[/color][/b]")
+        content.add_widget(self._gr_panel([self._gr_auto_label(head, font='20sp')], pad=8))
+        scroll = ScrollView()
+        grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
+        grid.bind(minimum_height=grid.setter('height'))
+        scroll.add_widget(grid)
+        content.add_widget(scroll)
+        moves = self.payback_moves(client)
+        if not moves:
+            grid.add_widget(self._gr_auto_label("[color=#7F8A99]пока нет записей[/color]", font='15sp'))
+        for day, what, diff, left in reversed(moves):
+            if diff < 0:
+                amt = f"[b][color=#FF8A80]минус {rub(-diff)} р[/color][/b]"
+            else:
+                amt = f"[b][color=#8FE6B0]вернулось {rub(diff)} р[/color][/b]"
+            lc = '#FF8A80' if left > 0.004 else '#5FD39B'
+            txt = (f"[color=#AAB4C8]{day}[/color]  {amt}\n[color=#E3E9F2]{escape_markup(what)}[/color]\n"
+                   f"[size=18sp][b]осталось: [color={lc}]{rub(left)} р[/color][/b][/size]")
+            grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='16sp', color=GR_TEXT, halign='left')], pad=6))
+        content.add_widget(self.get_bottom_buttons(pop, prev_cb=lambda *a: self.show_payback_popup(), cancel_text="ЗАКРЫТЬ"))
+        pop.open()
+
     def show_payback_popup(self, *a):
         """Окупаемость рулонов по позициям: чёрный / белый / плёнка (нажать — правка, как раньше)."""
         app = App.get_running_app()
@@ -1625,7 +1690,8 @@ class ClientsScreen(Screen):
         pop = TopMenuPopup(title="ОКУПАЕМОСТЬ РУЛОНОВ", content=content, size_hint=(0.96, 0.7))
         pop.background_color = GR_BG
         content.add_widget(self._gr_auto_label(
-            "[color=#AAB4C8]минус — сколько ещё должно вернуться с заказов за купленный рулон[/color]", font='14sp'))
+            "[color=#AAB4C8]минус — сколько ещё должно вернуться с заказов за купленный рулон.\n"
+            "Нажмите на строку — как он гасится по заказам.[/color]", font='14sp'))
         for idx, kind in ((c_idx, 'black'), (b_idx, 'white'), (app.plenka_index(), 'plenka')):
             if idx is None:
                 continue
@@ -1641,7 +1707,11 @@ class ClientsScreen(Screen):
             def _open(x, i=idx):
                 pop.dismiss()
                 self.show_edit_popup(i)
-            content.add_widget(self._banner_row(text, _open, neon))
+
+            def _hist(x, i=idx):
+                pop.dismiss()
+                self.show_payback_history(i)
+            content.add_widget(self._banner_row(text, _open, neon, tap_cb=_hist))
         content.add_widget(Widget())
         content.add_widget(self.get_bottom_buttons(pop, cancel_text="ЗАКРЫТЬ"))
         pop.open()

@@ -162,6 +162,21 @@ class RollPaybackTests(unittest.TestCase):
                          [('24.11.26', 'Саша', 25.0, 1375.0, -3625.0), ('25.11.26', 'Саша', 13.0, 715.0, -2910.0)])
         self.screen.show_settlement(oleg)
 
+    def test_payback_moves(self):
+        blk = {'name': 'ЧЕРНЫЙ', 'debt': '-4161', 'cid': 'BK', 'role': 'black', 'history': []}
+        self.app.clients.append(blk)
+        self.app.journal = [
+            {'t': '2026-11-20 10:00:00', 'op': 'заказ: 1x1', 'cid': 'BK', 'was': '-1000', 'now': '0'},
+            {'t': '2026-11-23 18:00:00', 'op': 'закупка банера: заплатил ОЛЕГ', 'cid': 'BK', 'was': '0', 'now': '-11760'},
+            {'t': '2026-11-25 10:40:05', 'op': 'заказ: 2x1.5 x1шт', 'cid': 'BK', 'was': '-11760', 'now': '-11385'},
+            {'t': '2026-11-26 13:40:01', 'op': 'заказ: 5.3x1.4 x1шт', 'cid': 'BK', 'was': '-11385', 'now': '-4161'}]
+        self.app.profit_log = [{'oid': 'x', 'name': 'НАСТЯ', 'date': '25.11.26 10:40', 'profit': 0, 'to_roll': 375}]
+        mv = self.screen.payback_moves(blk)
+        self.assertEqual(mv[0], ('23.11.26', 'закупка', -11760.0, 11760.0))
+        self.assertEqual(mv[1], ('25.11.26', 'НАСТЯ: 2x1.5 x1шт', 375.0, 11385.0))
+        self.assertEqual(len(mv), 3)
+        self.screen.show_payback_history(len(self.app.clients) - 1)
+
     def test_pack_like_corel_2611(self):
         from accounting import pack_length
         it = [(1.384, 3.05, 2), (3.05, 0.55, 2), (2.1, 2.1, 2), (4.55, 0.672, 1), (4.2, 2.6, 1), (3.1, 2.6, 1), (5.3, 1.4, 1)]
