@@ -69,7 +69,7 @@ def format_num_simple(val):
     return money(val)
 
 
-APP_VERSION = "4.33"   # должна совпадать с version в buildozer.spec (проверяется тестом)
+APP_VERSION = "4.34"   # должна совпадать с version в buildozer.spec (проверяется тестом)
 
 
 def rub(val):
@@ -1647,37 +1647,67 @@ class ClientsScreen(Screen):
             out.append((day, what, round(was - now, 2), round(now, 2)))
         return out
 
-    def show_payback_history(self, idx):
+    def show_payback_history(self, idx, day=None):
+        """Окупаемость рулона в деньгах: кратко — по дням (нажать день — подробно по заказам)."""
         app = App.get_running_app()
         if not app or idx is None:
             return
         client = app.clients[idx]
         disp = str(client.get('name', '')).upper()
+        moves = self.payback_moves(client)
         content = BoxLayout(orientation='vertical', spacing=_sp(8), padding=[_sp(10), _sp(6), _sp(10), _sp(8)])
-        pop = TopMenuPopup(title=f"ОКУПАЕМОСТЬ: {disp}", content=content, size_hint=(0.96, 0.92))
+        title = f"{disp} · {day[:5]}" if day else f"ОКУПАЕМОСТЬ: {disp}"
+        pop = TopMenuPopup(title=title, content=content, size_hint=(0.96, 0.92))
         pop.background_color = GR_BG
         now = abs(safe_float(client.get('debt')))
-        head = (f"[b]осталось вернуть: [color=#FF8A80]{rub(now)} р[/color][/b]" if now > 0.004
-                else "[b][color=#5FD39B]окуплен[/color][/b]")
-        content.add_widget(self._gr_panel([self._gr_auto_label(head, font='20sp')], pad=8))
+        back = 0.0
+        for d, w, diff, left in moves:
+            if diff > 0:
+                back += diff
+        if day is None:
+            head = ((f"[b]осталось: [color=#FF8A80]{rub(now)} р[/color][/b]" if now > 0.004
+                     else "[b][color=#5FD39B]окуплен[/color][/b]")
+                    + (f"\n[size=17sp]вернулось: [b][color=#8FE6B0]{rub(back)} р[/color][/b][/size]" if back > 0 else ""))
+            content.add_widget(self._gr_panel([self._gr_auto_label(head, font='22sp')], pad=8))
         scroll = ScrollView()
         grid = GridLayout(cols=1, spacing=_sp(6), size_hint_y=None, padding=[2, 4, 2, 8])
         grid.bind(minimum_height=grid.setter('height'))
         scroll.add_widget(grid)
         content.add_widget(scroll)
-        moves = self.payback_moves(client)
         if not moves:
             grid.add_widget(self._gr_auto_label("[color=#7F8A99]пока нет записей[/color]", font='15sp'))
-        for day, what, diff, left in reversed(moves):
-            if diff < 0:
-                amt = f"[b][color=#FF8A80]минус {rub(-diff)} р[/color][/b]"
-            else:
-                amt = f"[b][color=#8FE6B0]вернулось {rub(diff)} р[/color][/b]"
-            lc = '#FF8A80' if left > 0.004 else '#5FD39B'
-            txt = (f"[color=#AAB4C8]{day}[/color]  {amt}\n[color=#E3E9F2]{escape_markup(what)}[/color]\n"
-                   f"[size=18sp][b]осталось: [color={lc}]{rub(left)} р[/color][/b][/size]")
-            grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='16sp', color=GR_TEXT, halign='left')], pad=6))
-        content.add_widget(self.get_bottom_buttons(pop, prev_cb=lambda *a: self.show_payback_popup(), cancel_text="ЗАКРЫТЬ"))
+        if day is None:                                # кратко: одна строка на день
+            days = []
+            for d, w, diff, left in moves:
+                if diff < 0:
+                    days.append({'day': d, 'buy': -diff, 'back': 0.0, 'n': 0, 'left': left})
+                    continue
+                if not days or days[-1]['day'] != d or days[-1]['buy']:
+                    days.append({'day': d, 'buy': 0.0, 'back': 0.0, 'n': 0, 'left': left})
+                days[-1]['back'] += diff
+                days[-1]['n'] += 1
+                days[-1]['left'] = left
+            for g in reversed(days):
+                if g['buy']:
+                    txt = (f"[color=#AAB4C8]{g['day'][:5]}[/color]   [b][color=#FF8A80]закупка {rub(g['buy'])} р[/color][/b]")
+                else:
+                    txt = (f"[color=#AAB4C8]{g['day'][:5]}[/color]   [b][color=#8FE6B0]+{rub(g['back'])} р[/color][/b]"
+                           f"   [size=15sp][color=#7F8A99]{g['n']} зак.  ›[/color][/size]")
+                b = RoundedButton(text=txt, markup=True, bg_color=(0.18, 0.2, 0.25, 1), font_size='19sp',
+                                  radius=GR_RADIUS, size_hint_y=None, height=_sp(54))
+                if not g['buy']:
+                    b.bind(on_release=lambda x, d=g['day']: (pop.dismiss(), self.show_payback_history(idx, d)))
+                grid.add_widget(b)
+        else:                                          # подробно за один день
+            for d, what, diff, left in reversed(moves):
+                if d != day or diff < 0:
+                    continue
+                lc = '#FF8A80' if left > 0.004 else '#5FD39B'
+                txt = (f"[b][color=#8FE6B0]+{rub(diff)} р[/color][/b]  [color=#E3E9F2]{escape_markup(what)}[/color]\n"
+                       f"[size=15sp]осталось: [color={lc}]{rub(left)} р[/color][/size]")
+                grid.add_widget(self._gr_panel([self._gr_auto_label(txt, font='17sp', color=GR_TEXT, halign='left')], pad=6))
+        prev = (lambda *a: self.show_payback_history(idx)) if day else (lambda *a: self.show_payback_popup())
+        content.add_widget(self.get_bottom_buttons(pop, prev_cb=prev, cancel_text="ЗАКРЫТЬ"))
         pop.open()
 
     def show_payback_popup(self, *a):
