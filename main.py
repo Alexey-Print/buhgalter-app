@@ -4058,11 +4058,16 @@ class ClientsScreen(Screen):
         def _go(fn):
             pop.dismiss()
             fn()
+        _sp_ = app.get_special_clients()
+        _pay_idx = {'white': _sp_[2], 'black': _sp_[3], 'plenka': app.plenka_index()}.get(_c)
         for txt, col, fn in (
                 ("ИСТОРИЯ СПИСАНИЙ", (0.2, 0.23, 0.29, 1),
                  lambda: self._roll_history_popup(ri, back_cb=lambda *a: self._roll_card(ri, list_pop))),
                 ("ПРИШЁЛ РУЛОН", (0.16, 0.45, 0.32, 1), lambda: self._roll_edit_popup(ri, list_pop, mode='arrive')),
-                ("ИСПРАВИТЬ ОСТАТОК", (0.72, 0.53, 0.13, 1), lambda: self._roll_edit_popup(ri, list_pop, mode='fix'))):
+                ("ИСПРАВИТЬ ОСТАТОК", (0.72, 0.53, 0.13, 1), lambda: self._roll_edit_popup(ri, list_pop, mode='fix')),
+                ("ОКУПАЕМОСТЬ (ДЕНЬГИ)", (0.16, 0.36, 0.55, 1), lambda: self.show_payback_history(_pay_idx))):
+            if txt.startswith("ОКУПАЕМОСТЬ") and _pay_idx is None:
+                continue
             b = RoundedButton(text=txt, bg_color=col, bold=True, font_size='19sp', radius=GR_RADIUS,
                               size_hint_y=None, height=_sp(56))
             b.bind(on_release=lambda x, f=fn: _go(f))
